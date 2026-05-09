@@ -571,10 +571,14 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "dbt-duckdb" },
+    { name = "duckdb" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "dbt-duckdb", specifier = ">=1.9,<2.0" }]
+requires-dist = [
+    { name = "dbt-duckdb", specifier = ">=1.9,<2.0" },
+    { name = "duckdb" },
+]
 
 [[package]]
 name = "protobuf"
