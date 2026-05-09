@@ -1,7 +1,7 @@
 [project]
-name = "primamethyl-dbt-models"
+name = "primamenthyl-dbt-models"
 version = "0.1.0"
-description = "dbt models for primamethyl DuckDB outputs."
+description = "dbt models for primamenthyl DuckDB outputs."
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
 dependencies = [

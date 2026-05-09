@@ -1,8 +1,8 @@
-name: primamethyl
+name: primamenthyl
 version: 0.1.0
 config-version: 2
 
-profile: primamethyl
+profile: primamenthyl
 
 model-paths: ["models"]
 target-path: "target"
@@ -12,7 +12,7 @@ clean-targets:
   - "logs"
 
 models:
-  primamethyl:
+  primamenthyl:
     +database: "{{ env_var('DBT_DUCKDB_DATABASE') }}"
     staging:
       +materialized: view
