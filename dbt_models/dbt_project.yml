@@ -1,0 +1,19 @@
+name: primamethyl
+version: 0.1.0
+config-version: 2
+
+profile: primamethyl
+
+model-paths: ["models"]
+target-path: "target"
+clean-targets:
+  - "target"
+  - "dbt_packages"
+  - "logs"
+
+models:
+  primamethyl:
+    staging:
+      +materialized: view
+    marts:
+      +materialized: view

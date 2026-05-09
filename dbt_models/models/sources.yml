@@ -1,0 +1,34 @@
+version: 2
+
+sources:
+  - name: quant
+    description: Raw feature tables extracted from BAM input into DuckDB.
+    schema: main
+    tables:
+      - name: quant__records
+        description: One row per retained BAM record.
+      - name: quant__methylation
+        description: One row per methylation event identified on a record.
+      - name: quant__samples
+        description: Sample-level metadata for the DuckDB file.
+
+models:
+  - name: stg_record_methylation_counts
+    description: Per-record methylation event counts derived from the raw quant tables.
+    columns:
+      - name: read_id
+        tests:
+          - not_null
+          - unique
+      - name: methylation_count
+        tests:
+          - not_null
+  - name: sample_mean_methylation
+    description: Mean methylation count per record for the sample represented in the DuckDB file.
+    columns:
+      - name: sample
+        tests:
+          - not_null
+      - name: mean_methylation_count
+        tests:
+          - not_null

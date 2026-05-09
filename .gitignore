@@ -1,0 +1,40 @@
+# macOS / editor noise
+.DS_Store
+.idea/
+.vscode/
+
+# Python caches and test artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Build / packaging artifacts
+build/
+dist/
+*.egg-info/
+
+# Local environment files
+.env
+.env.*
+
+# dbt generated artifacts
+dbt_models/target/
+dbt_models/logs/
+dbt_models/.dbt/
+
+# DuckDB local databases and WAL files
+*.duckdb
+*.duckdb-wal
+*.duckdb.tmp
