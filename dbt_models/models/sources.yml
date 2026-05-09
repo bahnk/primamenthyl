@@ -3,6 +3,7 @@ version: 2
 sources:
   - name: quant
     description: Raw feature tables extracted from BAM input into DuckDB.
+    database: "{{ env_var('DBT_DUCKDB_DATABASE') }}"
     schema: main
     tables:
       - name: quant__records

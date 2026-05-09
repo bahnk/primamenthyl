@@ -13,6 +13,7 @@ clean-targets:
 
 models:
   primamethyl:
+    +database: "{{ env_var('DBT_DUCKDB_DATABASE') }}"
     staging:
       +materialized: view
     marts:
