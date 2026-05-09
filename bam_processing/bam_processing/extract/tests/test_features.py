@@ -54,15 +54,19 @@ def test_extract_bam_features_from_bai_returns_motif_and_methylation_arrays(
         record_count = connection.execute(
             "SELECT COUNT(*) FROM quant__records"
         ).fetchone()[0]
-        motif_count = connection.execute(
+        motif_row_count = connection.execute(
             "SELECT COUNT(*) FROM quant__motifs"
+        ).fetchone()[0]
+        motif_total_count = connection.execute(
+            "SELECT SUM(count) FROM quant__motifs"
         ).fetchone()[0]
         methylation_count = connection.execute(
             "SELECT COUNT(*) FROM quant__methylation"
         ).fetchone()[0]
 
         assert record_count > 0
-        assert motif_count >= record_count
+        assert motif_row_count > 0
+        assert motif_total_count == 2 * record_count
         assert methylation_count >= 0
     finally:
         connection.close()

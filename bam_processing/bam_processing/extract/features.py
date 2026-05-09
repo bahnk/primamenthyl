@@ -74,18 +74,21 @@ def count_motifs(motifs: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
             The unique motif rows and the count for each row.
     """
 
+    motif_width = motifs.shape[1]
+
     # jnp.unique sorts internally; hashing avoids the unsupported
     # 2D sort path on Metal.
     if jax.default_backend().upper() == "METAL":
-        powers = jnp.array([5**3, 5**2, 5, 1], dtype=jnp.int32)
+        powers = jnp.array(
+            [5**power for power in range(motif_width - 1, -1, -1)],
+            dtype=jnp.int32,
+        )
         encoded = (motifs * powers).sum(axis=1)
         unique_values, counts = jnp.unique(encoded, return_counts=True)
         unique_motifs = jnp.stack(
             [
-                (unique_values // 5**3) % 5,
-                (unique_values // 5**2) % 5,
-                (unique_values // 5) % 5,
-                unique_values % 5,
+                (unique_values // (5**power)) % 5
+                for power in range(motif_width - 1, -1, -1)
             ],
             axis=1,
         )
@@ -240,7 +243,6 @@ def create_feature_tables(connection: duckdb.DuckDBPyConnection) -> None:
         """)
     connection.execute("""
         CREATE TABLE quant__motifs (
-            read_id BIGINT,
             motif VARCHAR,
             count INTEGER,
             side VARCHAR
@@ -322,26 +324,26 @@ def build_motif_rows(
     )
     right_idx = encoded.lengths[:, None] - jnp.arange(motif_size, dtype=jnp.int32) - 1
 
-    left_motifs = decode_motifs(
-        np.asarray(jnp.take_along_axis(encoded.sequences, left_idx, axis=1))
+    left_unique, left_counts = count_motifs(
+        jnp.take_along_axis(encoded.sequences, left_idx, axis=1)
     )
-    right_motifs = decode_motifs(
-        np.asarray(jnp.take_along_axis(encoded.sequences, right_idx, axis=1))
+    right_unique, right_counts = count_motifs(
+        jnp.take_along_axis(encoded.sequences, right_idx, axis=1)
     )
 
     rows: list[tuple] = []
-    for read_id, motif in zip(
-        encoded_chunk.read_ids.tolist(),
-        left_motifs.tolist(),
+    for motif, count in zip(
+        decode_motifs(np.asarray(left_unique)).tolist(),
+        np.asarray(left_counts).tolist(),
         strict=True,
     ):
-        rows.append((read_id, motif, 1, "left"))
-    for read_id, motif in zip(
-        encoded_chunk.read_ids.tolist(),
-        right_motifs.tolist(),
+        rows.append((motif, count, "left"))
+    for motif, count in zip(
+        decode_motifs(np.asarray(right_unique)).tolist(),
+        np.asarray(right_counts).tolist(),
         strict=True,
     ):
-        rows.append((read_id, motif, 1, "right"))
+        rows.append((motif, count, "right"))
 
     return rows
 
@@ -473,14 +475,12 @@ def write_chunk_parquet_files(
     write_parquet_table(
         temp_dir / f"quant__motifs_{chunk_idx:06d}.parquet",
         columns={
-            "read_id": [row[0] for row in motif_rows],
-            "motif": [row[1] for row in motif_rows],
-            "count": [row[2] for row in motif_rows],
-            "side": [row[3] for row in motif_rows],
+            "motif": [row[0] for row in motif_rows],
+            "count": [row[1] for row in motif_rows],
+            "side": [row[2] for row in motif_rows],
         },
         schema=pa.schema(
             [
-                ("read_id", pa.int64()),
                 ("motif", pa.string()),
                 ("count", pa.int32()),
                 ("side", pa.string()),
@@ -598,9 +598,9 @@ def merge_chunk_parquet_files(
             """)
         connection.execute(f"""
             INSERT INTO quant__motifs
-            SELECT * FROM read_parquet(
-                '{temp_dir / "quant__motifs_*.parquet"}'
-            )
+            SELECT motif, SUM(count) AS count, side
+            FROM read_parquet('{temp_dir / "quant__motifs_*.parquet"}')
+            GROUP BY motif, side
             """)
         connection.execute(f"""
             INSERT INTO quant__methylation
