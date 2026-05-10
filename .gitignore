@@ -38,3 +38,9 @@ dbt_models/.dbt/
 *.duckdb
 *.duckdb-wal
 *.duckdb.tmp
+
+# Data
+data/
+
+# Temporary files
+.tmp/

@@ -1,6 +1,5 @@
 """
-Feature extraction utilities for BAM records indexed by BAI
-files.
+Feature extraction utilities for BAM records indexed by BAI files.
 """
 
 from __future__ import annotations
@@ -21,6 +20,7 @@ from bam_processing.io.bam import (
     resolve_bam_path_from_bai,
     yield_record_chunks,
 )
+from bam_processing.io.fasta import load_fasta
 
 _NUCLEOTIDE_ENCODING = [4] * 256
 _NUCLEOTIDE_ENCODING[ord("A")] = 0
@@ -29,25 +29,18 @@ _NUCLEOTIDE_ENCODING[ord("G")] = 2
 _NUCLEOTIDE_ENCODING[ord("T")] = 3
 _NUCLEOTIDE_ENCODING[ord("N")] = 4
 _DECODING_ALPHABET = np.array(["A", "C", "G", "T", "N"], dtype="<U1")
-_DEFAULT_CHUNK_SIZE = 10_000
+_DEFAULT_CHUNK_SIZE = 50_000
 
 
-# pylint: disable=too-many-instance-attributes
 @dataclass(frozen=True)
 class EncodedBamRecords:
     """
-    Encoded BAM record data padded for downstream array
-    processing.
+    Encoded BAM record data for downstream array processing.
     """
 
-    lengths: jnp.ndarray
-    template_lengths: jnp.ndarray
     xm: jnp.ndarray
-    sequences: jnp.ndarray
-    references: tuple[str, ...]
     positions: jnp.ndarray
-    xr_tags: tuple[str, ...]
-    xg_tags: tuple[str, ...]
+    read_lengths: jnp.ndarray
 
 
 @dataclass(frozen=True)
@@ -57,6 +50,7 @@ class EncodedChunk:
     """
 
     read_ids: np.ndarray
+    template_lengths: jnp.ndarray
     encoded: EncodedBamRecords
 
 
@@ -66,13 +60,15 @@ def count_motifs(motifs: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
 
     Args:
         motifs (jnp.ndarray):
-            Two-dimensional array where each row is an encoded
-            motif.
+            Two-dimensional array where each row is an encoded motif.
 
     Returns:
         tuple[jnp.ndarray, jnp.ndarray]:
-            The unique motif rows and the count for each row.
+            Unique motif rows and their counts.
     """
+
+    if motifs.size == 0:
+        return motifs, jnp.array([], dtype=jnp.int32)
 
     motif_width = motifs.shape[1]
 
@@ -99,12 +95,11 @@ def count_motifs(motifs: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
 
 def decode_motifs(motifs: np.ndarray) -> np.ndarray:
     """
-    Decode encoded motif rows into nucleotide sequence strings.
+    Decode encoded motif rows into nucleotide strings.
 
     Args:
         motifs (np.ndarray):
-            Two-dimensional array where each row is an encoded
-            motif.
+            Two-dimensional array where each row is an encoded motif.
 
     Returns:
         np.ndarray:
@@ -112,27 +107,48 @@ def decode_motifs(motifs: np.ndarray) -> np.ndarray:
     """
 
     if motifs.size == 0:
-        return np.array([], dtype=f"<U{motifs.shape[1]}")
+        return np.array([], dtype=f"<U{motifs.shape[1] if motifs.ndim == 2 else 0}")
 
     decoded = _DECODING_ALPHABET[motifs]
     return np.array(["".join(row) for row in decoded])
 
 
-# pylint: disable=too-many-locals
+def encode_nucleotide_sequence(sequence: str) -> np.ndarray:
+    """
+    Encode a nucleotide string with the `A/C/G/T/N -> 0..4` mapping.
+
+    Args:
+        sequence (str):
+            Uppercase nucleotide sequence string.
+
+    Returns:
+        np.ndarray:
+            One-dimensional `np.uint8` array with encoded bases.
+    """
+
+    return np.array(
+        [_NUCLEOTIDE_ENCODING[base] for base in sequence.encode("ascii")],
+        dtype=np.uint8,
+    )
+
+
 def encode_record_chunk(
     chunk: list[tuple[int, object]],
     *,
     min_read_length: int,
 ) -> EncodedChunk:
     """
-    Encode a chunk of BAM records for downstream JAX operations.
+    Encode a chunk of BAM records for downstream processing.
+
+    This follows the filtering and feature selection in `bam_processing/test.py`:
+    unmapped records are skipped, only proper-pair read1 forward reads are kept,
+    and methylation features come from the `XM` tag.
 
     Args:
         chunk (list[tuple[int, object]]):
             List of `(read_id, record)` pairs.
         min_read_length (int):
-            Minimum read length required for a record to be
-            included.
+            Minimum read length required for a record to be included.
 
     Returns:
         EncodedChunk:
@@ -140,94 +156,67 @@ def encode_record_chunk(
     """
 
     read_ids: list[int] = []
-    lengths: list[int] = []
     template_lengths: list[int] = []
-    sequences: list[list[int]] = []
-    xm_tags: list[list[int]] = []
-    references: list[str] = []
+    read_lengths: list[int] = []
     positions: list[int] = []
-    xr_tags: list[str] = []
-    xg_tags: list[str] = []
-    max_observed_length = 0
+    xm_tags: list[list[int]] = []
+    max_xm_length = 0
 
     for read_id, record in chunk:
         if record.is_unmapped:
             continue
+        if not record.is_proper_pair:
+            continue
+        if not record.is_read1:
+            continue
+        if record.is_reverse:
+            continue
 
-        query_sequence = record.query_sequence or ""
+        query_length = record.query_length or 0
+        template_length = record.template_length
         xm_tag = record.get_tag("XM") if record.has_tag("XM") else ""
-        read_length = min(len(query_sequence), len(xm_tag) or len(query_sequence))
 
-        if read_length < min_read_length:
+        if query_length < min_read_length:
             continue
 
         read_ids.append(read_id)
-        lengths.append(read_length)
-        template_lengths.append(record.template_length)
-        references.append(record.reference_name or "")
-        positions.append(record.pos)
-        xr_tags.append(record.get_tag("XR") if record.has_tag("XR") else "")
-        xg_tags.append(record.get_tag("XG") if record.has_tag("XG") else "")
+        template_lengths.append(template_length)
+        read_lengths.append(query_length)
+        positions.append(record.reference_start)
 
-        sequence_encoding = [
-            _NUCLEOTIDE_ENCODING[base]
-            for base in query_sequence[:read_length].encode("ascii")
-        ]
-        xm_encoding = [ord(char) for char in xm_tag[:read_length]]
-
-        sequences.append(sequence_encoding)
+        xm_encoding = [ord(char) for char in xm_tag]
         xm_tags.append(xm_encoding)
-        max_observed_length = max(max_observed_length, read_length)
+        max_xm_length = max(max_xm_length, len(xm_encoding))
 
     if not read_ids:
         empty_int = jnp.array([], dtype=jnp.int32)
-        empty_uint = jnp.empty((0, 0), dtype=jnp.uint8)
         return EncodedChunk(
             read_ids=np.array([], dtype=np.int64),
+            template_lengths=empty_int,
             encoded=EncodedBamRecords(
-                lengths=empty_int,
-                template_lengths=empty_int,
-                xm=empty_int,
-                sequences=empty_uint,
-                references=(),
+                xm=jnp.empty((0, 0), dtype=jnp.int32),
                 positions=empty_int,
-                xr_tags=(),
-                xg_tags=(),
+                read_lengths=empty_int,
             ),
         )
 
-    padded_sequences = [
-        sequence + ([4] * (max_observed_length - len(sequence)))
-        for sequence in sequences
-    ]
-    padded_xm = [xm + ([4] * (max_observed_length - len(xm))) for xm in xm_tags]
+    padded_xm = [xm + ([0] * (max_xm_length - len(xm))) for xm in xm_tags]
 
+    encoded = EncodedBamRecords(
+        xm=jnp.array(padded_xm, dtype=jnp.int32),
+        positions=jnp.array(positions, dtype=jnp.int32),
+        read_lengths=jnp.array(read_lengths, dtype=jnp.int32),
+    )
     return EncodedChunk(
         read_ids=np.array(read_ids, dtype=np.int64),
-        encoded=EncodedBamRecords(
-            lengths=jnp.array(lengths, dtype=jnp.int32),
-            template_lengths=jnp.array(template_lengths, dtype=jnp.int32),
-            xm=jnp.array(padded_xm, dtype=jnp.int32),
-            sequences=jnp.array(padded_sequences, dtype=jnp.uint8),
-            references=tuple(references),
-            positions=jnp.array(positions, dtype=jnp.int32),
-            xr_tags=tuple(xr_tags),
-            xg_tags=tuple(xg_tags),
-        ),
+        template_lengths=jnp.array(template_lengths, dtype=jnp.int32),
+        encoded=encoded,
     )
 
 
 def create_feature_tables(connection: duckdb.DuckDBPyConnection) -> None:
     """
     Create feature export tables in a DuckDB database.
-
-    Args:
-        connection (duckdb.DuckDBPyConnection):
-            Open DuckDB connection.
-
-    Returns:
-        None:
-            This function does not return a value.
     """
 
     connection.execute("""
@@ -267,103 +256,127 @@ def create_feature_tables(connection: duckdb.DuckDBPyConnection) -> None:
 def build_records_rows(encoded_chunk: EncodedChunk) -> list[tuple]:
     """
     Build DuckDB record rows from an encoded chunk.
-
-    Args:
-        encoded_chunk (EncodedChunk):
-            Encoded chunk data and source read identifiers.
-
-    Returns:
-        list[tuple]:
-            Record rows for insertion into the `quant__records`
-            table.
     """
 
     encoded = encoded_chunk.encoded
+    row_count = encoded_chunk.read_ids.size
     return list(
         zip(
             encoded_chunk.read_ids.tolist(),
-            np.asarray(encoded.lengths).tolist(),
-            np.asarray(encoded.template_lengths).tolist(),
-            list(encoded.references),
+            np.asarray(encoded.read_lengths).tolist(),
+            np.asarray(encoded_chunk.template_lengths).tolist(),
+            [""] * row_count,
             np.asarray(encoded.positions).tolist(),
-            list(encoded.xr_tags),
-            list(encoded.xg_tags),
+            [""] * row_count,
+            [""] * row_count,
             strict=True,
         )
     )
+
+
+def _build_fragment_boundaries(
+    encoded_chunk: EncodedChunk,
+) -> tuple[jnp.ndarray, jnp.ndarray]:
+    """
+    Compute 5' and 3' fragment boundaries from chunk arrays.
+    """
+
+    encoded = encoded_chunk.encoded
+    template_lengths = encoded_chunk.template_lengths
+
+    start_mask = (template_lengths < 0).astype(jnp.int32)
+    start_positions = (
+        encoded.positions
+        + start_mask * encoded.read_lengths
+        + start_mask * template_lengths
+    )
+
+    end_fwd_mask = (template_lengths > 0).astype(jnp.int32)
+    end_rev_mask = (template_lengths < 0).astype(jnp.int32)
+    end_positions = (
+        encoded.positions
+        + end_fwd_mask * template_lengths
+        + end_rev_mask * encoded.read_lengths
+    )
+
+    return start_positions, end_positions
+
+
+def _extract_valid_motifs(
+    reference: jnp.ndarray,
+    indices: jnp.ndarray,
+) -> jnp.ndarray:
+    """
+    Gather motif rows that lie entirely within the reference array.
+    """
+
+    if indices.size == 0:
+        return jnp.empty((0, 0), dtype=jnp.uint8)
+
+    valid_mask = ((indices >= 0) & (indices < reference.shape[0])).all(axis=1)
+    valid_indices = indices[valid_mask]
+    if valid_indices.size == 0:
+        return jnp.empty((0, indices.shape[1]), dtype=jnp.uint8)
+
+    return reference[valid_indices]
 
 
 def build_motif_rows(
     encoded_chunk: EncodedChunk,
     *,
     motif_size: int,
+    reference: jnp.ndarray,
 ) -> list[tuple]:
     """
-    Build motif rows from an encoded chunk using JAX operations.
-
-    Args:
-        encoded_chunk (EncodedChunk):
-            Encoded chunk data and source read identifiers.
-        motif_size (int):
-            Width of the left and right motifs to extract from
-            each read.
-
-    Returns:
-        list[tuple]:
-            Motif rows for insertion into the `quant__motifs`
-            table.
+    Build motif rows from a chunk using reference-derived fragment motifs.
     """
 
-    encoded = encoded_chunk.encoded
-    if encoded.lengths.size == 0:
+    if encoded_chunk.read_ids.size == 0:
         return []
 
-    left_idx = jnp.tile(
-        jnp.arange(motif_size, dtype=jnp.int32),
-        (encoded.sequences.shape[0], 1),
-    )
-    right_idx = encoded.lengths[:, None] - jnp.arange(motif_size, dtype=jnp.int32) - 1
+    start_positions, end_positions = _build_fragment_boundaries(encoded_chunk)
 
-    left_unique, left_counts = count_motifs(
-        jnp.take_along_axis(encoded.sequences, left_idx, axis=1)
+    five_prime_indices = (
+        jnp.arange(motif_size, dtype=jnp.int32) + start_positions[:, None] - 1
     )
-    right_unique, right_counts = count_motifs(
-        jnp.take_along_axis(encoded.sequences, right_idx, axis=1)
+    three_prime_indices = (
+        end_positions[:, None]
+        - jnp.arange(motif_size - 1, -1, -1, dtype=jnp.int32)
+        - 1
     )
+
+    five_prime_motifs = _extract_valid_motifs(reference, five_prime_indices)
+    three_prime_motifs = _extract_valid_motifs(reference, three_prime_indices)
 
     rows: list[tuple] = []
-    for motif, count in zip(
-        decode_motifs(np.asarray(left_unique)).tolist(),
-        np.asarray(left_counts).tolist(),
-        strict=True,
-    ):
-        rows.append((motif, count, "left"))
-    for motif, count in zip(
-        decode_motifs(np.asarray(right_unique)).tolist(),
-        np.asarray(right_counts).tolist(),
-        strict=True,
-    ):
-        rows.append((motif, count, "right"))
+    if five_prime_motifs.size > 0:
+        unique_motifs, counts = count_motifs(five_prime_motifs)
+        for motif, count in zip(
+            decode_motifs(np.asarray(unique_motifs)).tolist(),
+            np.asarray(counts).tolist(),
+            strict=True,
+        ):
+            rows.append((motif, count, "five_prime"))
+
+    if three_prime_motifs.size > 0:
+        unique_motifs, counts = count_motifs(three_prime_motifs)
+        for motif, count in zip(
+            decode_motifs(np.asarray(unique_motifs)).tolist(),
+            np.asarray(counts).tolist(),
+            strict=True,
+        ):
+            rows.append((motif, count, "three_prime"))
 
     return rows
 
 
 def build_methylation_rows(encoded_chunk: EncodedChunk) -> list[tuple]:
     """
-    Build methylation rows from an encoded chunk using JAX.
-
-    Args:
-        encoded_chunk (EncodedChunk):
-            Encoded chunk data and source read identifiers.
-
-    Returns:
-        list[tuple]:
-            Methylation rows for insertion into the
-            `quant__methylation` table.
+    Build methylation rows from an encoded chunk.
     """
 
     encoded = encoded_chunk.encoded
-    if encoded.lengths.size == 0:
+    if encoded.xm.size == 0:
         return []
 
     methylated_rows, methylated_cols = jnp.nonzero(encoded.xm == ord("Z"))
@@ -385,25 +398,12 @@ def write_parquet_table(
 ) -> None:
     """
     Write a Parquet file directly from in-memory column data.
-
-    Args:
-        output_path (Path):
-            Path to the output Parquet file.
-        columns (dict[str, list]):
-            Column-oriented table data.
-        schema (pa.Schema):
-            Explicit Arrow schema for the Parquet file.
-
-    Returns:
-        None:
-            This function does not return a value.
     """
 
     table = pa.Table.from_pydict(columns, schema=schema)
     pq.write_table(table, output_path)
 
 
-# pylint: disable=too-many-arguments
 def write_chunk_parquet_files(
     temp_dir: Path,
     *,
@@ -414,38 +414,17 @@ def write_chunk_parquet_files(
     group: str | None,
     encoded_chunk: EncodedChunk,
     motif_size: int,
+    reference: jnp.ndarray,
 ) -> None:
     """
     Write a chunk's feature data to Parquet files.
-
-    Args:
-        temp_dir (Path):
-            Temporary directory for chunk Parquet files.
-        chunk_idx (int):
-            Zero-based chunk index.
-        sample_name (str):
-            Sample name for the export.
-        total_records (int):
-            Total number of records reported by the BAI index.
-        age (int | None):
-            Sample age metadata.
-        group (str | None):
-            Sample group metadata such as `als` or `ctrl`.
-        encoded_chunk (EncodedChunk):
-            Encoded chunk data and source read identifiers.
-        motif_size (int):
-            Width of the left and right motifs to extract from
-            each read.
-
-    Returns:
-        None:
-            This function does not return a value.
     """
 
     record_rows = build_records_rows(encoded_chunk)
     motif_rows = build_motif_rows(
         encoded_chunk,
         motif_size=motif_size,
+        reference=reference,
     )
     methylation_rows = build_methylation_rows(encoded_chunk)
 
@@ -527,18 +506,6 @@ def prepare_output_paths(
 ) -> tuple[str, Path]:
     """
     Resolve output paths for the final DuckDB database.
-
-    Args:
-        bai_path (str | Path):
-            Path to a `.bai` index file.
-        sample_name (str | None):
-            Optional sample name override.
-        output_path (str | Path | None):
-            Optional final DuckDB path override.
-
-    Returns:
-        tuple[str, Path]:
-            Sample name and final DuckDB path.
     """
 
     bam_path = resolve_bam_path_from_bai(bai_path)
@@ -567,24 +534,6 @@ def merge_chunk_parquet_files(
 ) -> Path:
     """
     Merge chunk Parquet files into the final DuckDB database.
-
-    Args:
-        temp_dir (Path):
-            Temporary directory containing chunk Parquet files.
-        sample_name (str):
-            Sample name for the export.
-        total_records (int):
-            Total number of records reported by the BAI index.
-        age (int | None):
-            Sample age metadata.
-        group (str | None):
-            Sample group metadata such as `als` or `ctrl`.
-        final_path (Path):
-            Path to the final DuckDB database.
-
-    Returns:
-        Path:
-            Path to the merged final DuckDB database.
     """
 
     connection = duckdb.connect(str(final_path))
@@ -608,7 +557,6 @@ def merge_chunk_parquet_files(
                 '{temp_dir / "quant__methylation_*.parquet"}'
             )
             """)
-
         connection.execute(
             "INSERT INTO quant__samples VALUES (?, ?, ?, ?)",
             [sample_name, total_records, age, group],
@@ -622,6 +570,7 @@ def merge_chunk_parquet_files(
 def extract_bam_features_from_bai(
     bai_path: str | Path,
     *,
+    fasta_path: str | Path,
     sample_name: str | None = None,
     age: int | None = None,
     group: str | None = None,
@@ -632,33 +581,12 @@ def extract_bam_features_from_bai(
 ) -> Path:
     """
     Extract BAM features into chunk and merged DuckDB files.
-
-    Args:
-        bai_path (str | Path):
-            Path to a `.bai` index file.
-        sample_name (str | None):
-            Optional sample name override.
-        age (int | None):
-            Sample age metadata.
-        group (str | None):
-            Sample group metadata such as `als` or `ctrl`.
-        motif_size (int):
-            Width of the left and right motifs to extract from
-            each read.
-        min_read_length (int):
-            Minimum read length required for a record to be
-            included.
-        chunk_size (int):
-            Maximum number of source records to process per
-            chunk.
-        output_path (str | Path | None):
-            Optional final DuckDB path override.
-
-    Returns:
-        Path:
-            Path to the merged final DuckDB database.
     """
 
+    reference = jnp.array(
+        encode_nucleotide_sequence(load_fasta(fasta_path)),
+        dtype=jnp.uint8,
+    )
     total_records = count_records_in_bai(bai_path)
     sample_name, final_path = prepare_output_paths(
         bai_path,
@@ -685,6 +613,7 @@ def extract_bam_features_from_bai(
                 group=group,
                 encoded_chunk=encoded_chunk,
                 motif_size=motif_size,
+                reference=reference,
             )
 
         return merge_chunk_parquet_files(

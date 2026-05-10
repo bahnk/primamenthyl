@@ -31,3 +31,25 @@ def bai_path() -> Path:
         pytest.fail(f"TEST_BAI_PATH does not exist: {path}")
 
     return path
+
+
+@pytest.fixture
+def fasta_path() -> Path:
+    """
+    Return the integration-test FASTA path from the environment.
+
+    Returns:
+        Path:
+            The path referenced by the `TEST_FASTA_PATH`
+            environment variable.
+    """
+
+    value = os.environ.get("TEST_FASTA_PATH")
+    if not value:
+        pytest.fail("TEST_FASTA_PATH must be set for extract tests")
+
+    path = Path(value)
+    if not path.exists():
+        pytest.fail(f"TEST_FASTA_PATH does not exist: {path}")
+
+    return path

@@ -18,6 +18,10 @@ from bam_processing.extract import extract_bam_features_from_bai
     "bai_path",
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
 )
+@click.argument(
+    "fasta_path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+)
 @click.option(
     "--sample-name",
     type=str,
@@ -65,6 +69,7 @@ from bam_processing.extract import extract_bam_features_from_bai
 )
 def cli(
     bai_path: Path,
+    fasta_path: Path,
     *,
     sample_name: str | None,
     age: int | None,
@@ -80,6 +85,8 @@ def cli(
     Args:
         bai_path (Path):
             Path to the `.bai` file to process.
+        fasta_path (Path):
+            Path to the FASTA reference sequence file.
         sample_name (str | None):
             Optional sample name override.
         age (int | None):
@@ -103,6 +110,7 @@ def cli(
 
     output_file = extract_bam_features_from_bai(
         bai_path,
+        fasta_path=fasta_path,
         sample_name=sample_name,
         age=age,
         group=group,
