@@ -144,8 +144,8 @@ def encode_record_chunk(
     Encode a chunk of BAM records for downstream processing.
 
     This follows the filtering and feature selection in `bam_processing/test.py`:
-    unmapped records are skipped, only proper-pair read1 forward reads are kept,
-    and methylation features come from the `XM` tag.
+    unmapped records are skipped, and methylation features come from the `XM`
+    tag.
 
     Args:
         chunk (list[tuple[int, object]]):
@@ -170,8 +170,6 @@ def encode_record_chunk(
         if record.is_unmapped:
             continue
         if not record.is_proper_pair:
-            continue
-        if not record.is_read1:
             continue
 
         query_length = record.query_length or 0
