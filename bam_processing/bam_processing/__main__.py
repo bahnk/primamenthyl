@@ -45,7 +45,12 @@ def _configure_jax_platform() -> None:
     try:
         importlib.metadata.version("jax-metal")
     except importlib.metadata.PackageNotFoundError:
-        if importlib.util.find_spec("jax_plugins.metal_plugin") is not None:
+        try:
+            metal_plugin_spec = importlib.util.find_spec("jax_plugins.metal_plugin")
+        except ModuleNotFoundError:
+            metal_plugin_spec = None
+
+        if metal_plugin_spec is not None:
             return
         raise SystemExit(
             "JAX_PLATFORMS requests 'METAL', but 'jax-metal' is not installed in "
