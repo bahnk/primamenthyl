@@ -77,7 +77,13 @@ def test_extract_bam_features_from_bai_writes_expected_duckdb_tables(
         if record_count > 0:
             record_row = connection.execute(
                 """
-                SELECT align_id, template_length, reference, position
+                SELECT
+                    align_id,
+                    template_length,
+                    reference,
+                    position,
+                    start_position,
+                    end_position
                 FROM quant__records
                 LIMIT 1
                 """
@@ -87,6 +93,8 @@ def test_extract_bam_features_from_bai_writes_expected_duckdb_tables(
             assert isinstance(record_row[1], int)
             assert isinstance(record_row[2], str)
             assert isinstance(record_row[3], int)
+            assert isinstance(record_row[4], int)
+            assert isinstance(record_row[5], int)
 
         if motif_row_count > 0:
             motif_sides = {

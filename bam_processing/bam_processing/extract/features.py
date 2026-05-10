@@ -229,7 +229,9 @@ def create_feature_tables(connection: duckdb.DuckDBPyConnection) -> None:
             align_id BIGINT,
             template_length INTEGER,
             reference VARCHAR,
-            position INTEGER
+            position INTEGER,
+            start_position INTEGER,
+            end_position INTEGER
         )
         """)
     connection.execute("""
@@ -262,13 +264,15 @@ def build_records_rows(encoded_chunk: EncodedChunk) -> list[tuple]:
     """
 
     encoded = encoded_chunk.encoded
-    row_count = encoded_chunk.align_ids.size
+    start_positions, end_positions = _build_fragment_boundaries(encoded_chunk)
     return list(
         zip(
             encoded_chunk.align_ids.tolist(),
             np.asarray(encoded_chunk.template_lengths).tolist(),
             list(encoded.references),
             np.asarray(encoded.positions).tolist(),
+            np.asarray(start_positions).tolist(),
+            np.asarray(end_positions).tolist(),
             strict=True,
         )
     )
@@ -436,6 +440,8 @@ def write_chunk_parquet_files(
             "template_length": [row[1] for row in record_rows],
             "reference": [row[2] for row in record_rows],
             "position": [row[3] for row in record_rows],
+            "start_position": [row[4] for row in record_rows],
+            "end_position": [row[5] for row in record_rows],
         },
         schema=pa.schema(
             [
@@ -443,6 +449,8 @@ def write_chunk_parquet_files(
                 ("template_length", pa.int32()),
                 ("reference", pa.string()),
                 ("position", pa.int32()),
+                ("start_position", pa.int32()),
+                ("end_position", pa.int32()),
             ]
         ),
     )
