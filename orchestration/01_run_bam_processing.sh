@@ -12,6 +12,18 @@ if [[ -z "${OUTPUT_DIR:-}" ]]; then
   exit 1
 fi
 
+if [[ -z "${FASTA_PATH:-}" ]]; then
+  echo "FASTA_PATH is not set" >&2
+  exit 1
+fi
+
+if [[ ! -f "$FASTA_PATH" ]]; then
+  echo "FASTA_PATH does not exist: $FASTA_PATH" >&2
+  exit 1
+fi
+
+chunk_size="${CHUNK_SIZE:-10000}"
+
 mkdir -p "$OUTPUT_DIR"
 
 jq -c '.samples[]' config/sample_config.json | while read -r sample; do
@@ -22,8 +34,10 @@ jq -c '.samples[]' config/sample_config.json | while read -r sample; do
 
   uv run --project bam_processing bam-processing \
     "$BAM_DIR/$bai_filename" \
+    "$FASTA_PATH" \
     --sample-name "$sample_name" \
     --age "$age" \
     --group "$group" \
+    --chunk-size "$chunk_size" \
     --output-path "$OUTPUT_DIR/$sample_name.features.duckdb"
 done

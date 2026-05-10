@@ -4,11 +4,15 @@ Command-line interface for processing a single BAI file.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import rich_click as click
 
-from bam_processing.extract import extract_bam_features_from_bai
+from bam_processing.extract import (
+    extract_bam_features_from_bai,
+)
+from bam_processing.extract.features import _DEFAULT_CHUNK_SIZE
 
 
 @click.command(
@@ -57,7 +61,7 @@ from bam_processing.extract import extract_bam_features_from_bai
 @click.option(
     "--chunk-size",
     type=click.IntRange(min=1),
-    default=10_000,
+    default=_DEFAULT_CHUNK_SIZE,
     show_default=True,
     help="Maximum number of source records per chunk.",
 )
@@ -107,6 +111,8 @@ def cli(
         None:
             This function does not return a value.
     """
+
+    logging.basicConfig(level=logging.INFO)
 
     output_file = extract_bam_features_from_bai(
         bai_path,

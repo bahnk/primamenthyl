@@ -44,3 +44,6 @@ data/
 
 # Temporary files
 .tmp/
+
+# Output files
+output/

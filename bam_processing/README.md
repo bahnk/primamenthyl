@@ -10,10 +10,24 @@ record, motif, methylation, and sample tables.
 uv sync
 ```
 
+On Apple Silicon, Metal support is optional and requires the macOS extra:
+
+```bash
+uv sync --extra macos
+```
+
+If you set `JAX_PLATFORMS`, use `METAL` for Apple GPU runs or `cpu` for CPU runs.
+
 ## Run the CLI
 
 ```bash
 uv run bam-processing /path/to/sample.bam.bai
+```
+
+Example with Metal:
+
+```bash
+JAX_PLATFORMS=METAL uv run --project bam_processing bam-processing /path/to/sample.bam.bai /path/to/reference.fa
 ```
 
 Optional metadata and output settings:

@@ -1,10 +1,11 @@
 # Orchestration
 
-These scripts run the sample pipeline in three ordered steps:
+These scripts run the sample pipeline in ordered steps:
 
-1. extract per-sample DuckDB files from BAM indexes
-2. apply the dbt models to each per-sample DuckDB file
-3. merge all per-sample DuckDB files into one combined DuckDB file
+1. optionally merge all sample BAMs into one indexed BAM
+2. extract per-sample DuckDB files from BAM indexes
+3. apply the dbt models to each per-sample DuckDB file
+4. merge all per-sample DuckDB files into one combined DuckDB file
 
 ## Required Dependencies
 
@@ -22,6 +23,12 @@ The project dependencies for `bam_processing` and `dbt_models` are installed and
 
 Optional:
 
+- `CHUNK_SIZE`
+  Maximum number of source BAM records processed per extractor chunk.
+  Default: `10000`
+- `MERGED_BAM_PATH`
+  Output path for the merged BAM file created by the optional BAM merge step.
+  Default: `$BAM_DIR/all_samples.bam`
 - `MERGED_DUCKDB_PATH`
   Output path for the merged DuckDB file created by step 3.
   Default: `$OUTPUT_DIR/all_samples.features.duckdb`
@@ -38,6 +45,7 @@ export OUTPUT_DIR=/tmp/prefect
 Run the scripts in order:
 
 ```bash
+bash orchestration/00_merge_bam_files.sh
 bash orchestration/01_run_bam_processing.sh
 bash orchestration/02_run_dbt_models.sh
 bash orchestration/03_merge_duckdb_files.sh
@@ -45,10 +53,18 @@ bash orchestration/03_merge_duckdb_files.sh
 
 ## What Each Script Does
 
+`00_merge_bam_files.sh`
+
+- reads `config/sample_config.json` with `jq`
+- resolves each configured `.bam` from its `.bai` filename
+- runs `samtools merge` to produce `$MERGED_BAM_PATH` or `$BAM_DIR/all_samples.bam`
+- runs `samtools index` to create the matching `.bai`
+
 `01_run_bam_processing.sh`
 
 - reads `config/sample_config.json` with `jq`
 - runs `uv run --project bam_processing bam-processing ...` for each sample
+- forwards `CHUNK_SIZE` to `--chunk-size`
 - writes one DuckDB file per sample to `$OUTPUT_DIR/<sample>.features.duckdb`
 
 `02_run_dbt_models.sh`

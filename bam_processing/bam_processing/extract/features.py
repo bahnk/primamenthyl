@@ -5,6 +5,7 @@ Feature extraction utilities for BAM records indexed by BAI files.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 from pathlib import Path
 import tempfile
 
@@ -29,7 +30,8 @@ _NUCLEOTIDE_ENCODING[ord("G")] = 2
 _NUCLEOTIDE_ENCODING[ord("T")] = 3
 _NUCLEOTIDE_ENCODING[ord("N")] = 4
 _DECODING_ALPHABET = np.array(["A", "C", "G", "T", "N"], dtype="<U1")
-_DEFAULT_CHUNK_SIZE = 50_000
+_DEFAULT_CHUNK_SIZE = 1_000_000
+_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -560,6 +562,7 @@ def merge_chunk_parquet_files(
     finally:
         connection.close()
 
+    _LOGGER.info("Wrote DuckDB output to %s", final_path)
     return final_path
 
 
@@ -603,6 +606,12 @@ def extract_bam_features_from_bai(
             )
             chunk_fragments = int(encoded_chunk.align_ids.size)
             total_fragments += chunk_fragments
+            _LOGGER.info(
+                "Processed chunk %s with %s source records and %s fragments",
+                chunk_idx,
+                len(chunk),
+                chunk_fragments,
+            )
             write_chunk_parquet_files(
                 temp_dir,
                 chunk_idx=chunk_idx,
