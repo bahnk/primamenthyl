@@ -51,8 +51,8 @@ bash orchestration/00_merge_bam_files.sh
 bash orchestration/01_run_bam_processing.sh
 bash orchestration/02_run_dbt_models.sh
 bash orchestration/03_merge_duckdb_files.sh
-bash orchestration/04_run_merged_dbt_models.sh
-bash orchestration/05_run_plotting.sh
+bash orchestration/05_run_merged_dbt_models.sh
+bash orchestration/06_run_plotting.sh
 ```
 
 ## What Each Script Does
@@ -83,12 +83,12 @@ bash orchestration/05_run_plotting.sh
 - merges all `*.features.duckdb` files in `OUTPUT_DIR`
 - writes the merged DuckDB file to `$MERGED_DUCKDB_PATH` or the default output path
 
-`04_run_merged_dbt_models.sh`
+`05_run_merged_dbt_models.sh`
 
 - runs `dbt run --select tag:merged` on the merged DuckDB file
 - reads the merged file from `$MERGED_DUCKDB_PATH` or `$OUTPUT_DIR/all_samples.features.duckdb`
 
-`05_run_plotting.sh`
+`06_run_plotting.sh`
 
 - runs the standalone plotting scripts in `plotting/`
 - reads the merged file from `$MERGED_DUCKDB_PATH` or `$OUTPUT_DIR/all_samples.features.duckdb`

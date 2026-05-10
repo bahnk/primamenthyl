@@ -14,8 +14,22 @@ sources:
         description: Motif counts aggregated from retained BAM records.
       - name: quant__samples
         description: Sample-level metadata for the DuckDB file.
-
 models:
+  - name: methylation_position_distribution
+    description: Distribution of methylation event counts by 100000 bp genomic bins and sample from merged quant__methylation and quant__records sources.
+    columns:
+      - name: sample
+        tests:
+          - not_null
+      - name: reference
+        tests:
+          - not_null
+      - name: position_bin
+        tests:
+          - not_null
+      - name: methylation_count
+        tests:
+          - not_null
   - name: end_motif_distribution
     description: End motif counts from the merged quant__motifs source, grouped by sample and side.
     columns:
@@ -90,6 +104,21 @@ models:
         tests:
           - not_null
       - name: count
+        tests:
+          - not_null
+  - name: stg_methylation_positions
+    description: Resolves methylation offsets to genomic positions by joining quant__methylation to quant__records on align_id.
+    columns:
+      - name: align_id
+        tests:
+          - not_null
+      - name: reference
+        tests:
+          - not_null
+      - name: methylation_offset
+        tests:
+          - not_null
+      - name: position
         tests:
           - not_null
   - name: stg_record_fragments
