@@ -10,10 +10,56 @@ sources:
         description: One row per retained BAM record.
       - name: quant__methylation
         description: One row per methylation event identified on a record.
+      - name: quant__motifs
+        description: Motif counts aggregated from retained BAM records.
       - name: quant__samples
         description: Sample-level metadata for the DuckDB file.
 
 models:
+  - name: stg_fragment_pairing
+    description: Counts align_ids per fragment_id and flags whether the fragment is paired.
+    columns:
+      - name: fragment_id
+        tests:
+          - not_null
+          - unique
+      - name: align_id_count
+        tests:
+          - not_null
+      - name: paired
+        tests:
+          - not_null
+  - name: stg_motif_half_counts
+    description: Motif counts divided by 2 and rounded to the nearest integer.
+    columns:
+      - name: motif
+        tests:
+          - not_null
+      - name: side
+        tests:
+          - not_null
+      - name: count
+        tests:
+          - not_null
+  - name: stg_record_fragments
+    description: Maps each record align_id to a fragment_id shared by records with the same start_position and end_position.
+    columns:
+      - name: align_id
+        tests:
+          - not_null
+          - unique
+      - name: fragment_id
+        tests:
+          - not_null
+      - name: start_position
+        tests:
+          - not_null
+      - name: end_position
+        tests:
+          - not_null
+      - name: template_length
+        tests:
+          - not_null
   - name: stg_record_methylation_counts
     description: Per-record methylation event counts derived from the raw quant tables.
     columns:

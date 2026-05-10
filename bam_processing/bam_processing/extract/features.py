@@ -249,7 +249,6 @@ def create_feature_tables(connection: duckdb.DuckDBPyConnection) -> None:
         CREATE TABLE quant__samples (
             sample VARCHAR,
             total_records BIGINT,
-            total_fragments BIGINT,
             age INTEGER,
             group_name VARCHAR
         )
@@ -412,7 +411,6 @@ def write_chunk_parquet_files(
     chunk_idx: int,
     sample_name: str,
     total_records: int,
-    total_fragments: int,
     age: int | None,
     group: str | None,
     encoded_chunk: EncodedChunk,
@@ -485,7 +483,6 @@ def write_chunk_parquet_files(
         columns={
             "sample": [sample_name],
             "total_records": [total_records],
-            "total_fragments": [total_fragments],
             "age": [age],
             "group_name": [group],
         },
@@ -493,7 +490,6 @@ def write_chunk_parquet_files(
             [
                 ("sample", pa.string()),
                 ("total_records", pa.int64()),
-                ("total_fragments", pa.int64()),
                 ("age", pa.int32()),
                 ("group_name", pa.string()),
             ]
@@ -531,7 +527,6 @@ def merge_chunk_parquet_files(
     *,
     sample_name: str,
     total_records: int,
-    total_fragments: int,
     age: int | None,
     group: str | None,
     final_path: Path,
@@ -562,8 +557,8 @@ def merge_chunk_parquet_files(
             )
             """)
         connection.execute(
-            "INSERT INTO quant__samples VALUES (?, ?, ?, ?, ?)",
-            [sample_name, total_records, total_fragments, age, group],
+            "INSERT INTO quant__samples VALUES (?, ?, ?, ?)",
+            [sample_name, total_records, age, group],
         )
     finally:
         connection.close()
@@ -599,7 +594,6 @@ def extract_bam_features_from_bai(
         output_path=output_path,
     )
     temp_dir = Path(tempfile.mkdtemp(prefix=f"{final_path.stem}_", suffix="_parquet"))
-    total_fragments = 0
 
     try:
         for chunk_idx, chunk in yield_record_chunks(
@@ -611,7 +605,6 @@ def extract_bam_features_from_bai(
                 min_read_length=max(motif_size, min_read_length),
             )
             chunk_fragments = int(encoded_chunk.align_ids.size)
-            total_fragments += chunk_fragments
             _LOGGER.info(
                 "Processed chunk %s with %s source records and %s fragments",
                 chunk_idx,
@@ -623,7 +616,6 @@ def extract_bam_features_from_bai(
                 chunk_idx=chunk_idx,
                 sample_name=sample_name,
                 total_records=total_records,
-                total_fragments=chunk_fragments,
                 age=age,
                 group=group,
                 encoded_chunk=encoded_chunk,
@@ -635,7 +627,6 @@ def extract_bam_features_from_bai(
             temp_dir,
             sample_name=sample_name,
             total_records=total_records,
-            total_fragments=total_fragments,
             age=age,
             group=group,
             final_path=final_path,
