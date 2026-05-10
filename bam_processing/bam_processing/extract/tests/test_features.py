@@ -49,11 +49,15 @@ def test_extract_bam_features_from_bai_writes_expected_duckdb_tables(
         }
 
         sample_row = connection.execute(
-            "SELECT sample, total_records, age, group_name FROM quant__samples"
+            """
+            SELECT sample, total_records, total_fragments, age, group_name
+            FROM quant__samples
+            """
         ).fetchone()
         assert sample_row is not None
         assert isinstance(sample_row[0], str)
         assert isinstance(sample_row[1], int)
+        assert isinstance(sample_row[2], int)
 
         record_count = connection.execute(
             "SELECT COUNT(*) FROM quant__records"
@@ -68,11 +72,12 @@ def test_extract_bam_features_from_bai_writes_expected_duckdb_tables(
         assert record_count >= 0
         assert motif_row_count >= 0
         assert methylation_count >= 0
+        assert sample_row[2] == record_count
 
         if record_count > 0:
             record_row = connection.execute(
                 """
-                SELECT read_id, length, template_length, reference, position, xr_tag, xg_tag
+                SELECT align_id, template_length, reference, position
                 FROM quant__records
                 LIMIT 1
                 """
@@ -80,11 +85,8 @@ def test_extract_bam_features_from_bai_writes_expected_duckdb_tables(
             assert record_row is not None
             assert isinstance(record_row[0], int)
             assert isinstance(record_row[1], int)
-            assert isinstance(record_row[2], int)
-            assert isinstance(record_row[3], str)
-            assert isinstance(record_row[4], int)
-            assert isinstance(record_row[5], str)
-            assert isinstance(record_row[6], str)
+            assert isinstance(record_row[2], str)
+            assert isinstance(record_row[3], int)
 
         if motif_row_count > 0:
             motif_sides = {

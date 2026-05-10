@@ -41,6 +41,7 @@ class EncodedBamRecords:
     xm: jnp.ndarray
     positions: jnp.ndarray
     read_lengths: jnp.ndarray
+    references: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -49,7 +50,7 @@ class EncodedChunk:
     Encoded BAM records and their source read identifiers.
     """
 
-    read_ids: np.ndarray
+    align_ids: np.ndarray
     template_lengths: jnp.ndarray
     encoded: EncodedBamRecords
 
@@ -146,7 +147,7 @@ def encode_record_chunk(
 
     Args:
         chunk (list[tuple[int, object]]):
-            List of `(read_id, record)` pairs.
+            List of `(align_id, record)` pairs.
         min_read_length (int):
             Minimum read length required for a record to be included.
 
@@ -155,21 +156,20 @@ def encode_record_chunk(
             Encoded chunk data and source read identifiers.
     """
 
-    read_ids: list[int] = []
+    align_ids: list[int] = []
     template_lengths: list[int] = []
     read_lengths: list[int] = []
     positions: list[int] = []
+    references: list[str] = []
     xm_tags: list[list[int]] = []
     max_xm_length = 0
 
-    for read_id, record in chunk:
+    for align_id, record in chunk:
         if record.is_unmapped:
             continue
         if not record.is_proper_pair:
             continue
         if not record.is_read1:
-            continue
-        if record.is_reverse:
             continue
 
         query_length = record.query_length or 0
@@ -179,24 +179,26 @@ def encode_record_chunk(
         if query_length < min_read_length:
             continue
 
-        read_ids.append(read_id)
+        align_ids.append(align_id)
         template_lengths.append(template_length)
         read_lengths.append(query_length)
         positions.append(record.reference_start)
+        references.append(record.reference_name or "")
 
         xm_encoding = [ord(char) for char in xm_tag]
         xm_tags.append(xm_encoding)
         max_xm_length = max(max_xm_length, len(xm_encoding))
 
-    if not read_ids:
+    if not align_ids:
         empty_int = jnp.array([], dtype=jnp.int32)
         return EncodedChunk(
-            read_ids=np.array([], dtype=np.int64),
+            align_ids=np.array([], dtype=np.int64),
             template_lengths=empty_int,
             encoded=EncodedBamRecords(
                 xm=jnp.empty((0, 0), dtype=jnp.int32),
                 positions=empty_int,
                 read_lengths=empty_int,
+                references=(),
             ),
         )
 
@@ -206,9 +208,10 @@ def encode_record_chunk(
         xm=jnp.array(padded_xm, dtype=jnp.int32),
         positions=jnp.array(positions, dtype=jnp.int32),
         read_lengths=jnp.array(read_lengths, dtype=jnp.int32),
+        references=tuple(references),
     )
     return EncodedChunk(
-        read_ids=np.array(read_ids, dtype=np.int64),
+        align_ids=np.array(align_ids, dtype=np.int64),
         template_lengths=jnp.array(template_lengths, dtype=jnp.int32),
         encoded=encoded,
     )
@@ -221,13 +224,10 @@ def create_feature_tables(connection: duckdb.DuckDBPyConnection) -> None:
 
     connection.execute("""
         CREATE TABLE quant__records (
-            read_id BIGINT,
-            length INTEGER,
+            align_id BIGINT,
             template_length INTEGER,
             reference VARCHAR,
-            position INTEGER,
-            xr_tag VARCHAR,
-            xg_tag VARCHAR
+            position INTEGER
         )
         """)
     connection.execute("""
@@ -239,7 +239,7 @@ def create_feature_tables(connection: duckdb.DuckDBPyConnection) -> None:
         """)
     connection.execute("""
         CREATE TABLE quant__methylation (
-            read_id BIGINT,
+            align_id BIGINT,
             position INTEGER
         )
         """)
@@ -247,6 +247,7 @@ def create_feature_tables(connection: duckdb.DuckDBPyConnection) -> None:
         CREATE TABLE quant__samples (
             sample VARCHAR,
             total_records BIGINT,
+            total_fragments BIGINT,
             age INTEGER,
             group_name VARCHAR
         )
@@ -259,16 +260,13 @@ def build_records_rows(encoded_chunk: EncodedChunk) -> list[tuple]:
     """
 
     encoded = encoded_chunk.encoded
-    row_count = encoded_chunk.read_ids.size
+    row_count = encoded_chunk.align_ids.size
     return list(
         zip(
-            encoded_chunk.read_ids.tolist(),
-            np.asarray(encoded.read_lengths).tolist(),
+            encoded_chunk.align_ids.tolist(),
             np.asarray(encoded_chunk.template_lengths).tolist(),
-            [""] * row_count,
+            list(encoded.references),
             np.asarray(encoded.positions).tolist(),
-            [""] * row_count,
-            [""] * row_count,
             strict=True,
         )
     )
@@ -331,7 +329,7 @@ def build_motif_rows(
     Build motif rows from a chunk using reference-derived fragment motifs.
     """
 
-    if encoded_chunk.read_ids.size == 0:
+    if encoded_chunk.align_ids.size == 0:
         return []
 
     start_positions, end_positions = _build_fragment_boundaries(encoded_chunk)
@@ -380,10 +378,10 @@ def build_methylation_rows(encoded_chunk: EncodedChunk) -> list[tuple]:
         return []
 
     methylated_rows, methylated_cols = jnp.nonzero(encoded.xm == ord("Z"))
-    read_ids = encoded_chunk.read_ids[np.asarray(methylated_rows)]
+    align_ids = encoded_chunk.align_ids[np.asarray(methylated_rows)]
     return list(
         zip(
-            read_ids.tolist(),
+            align_ids.tolist(),
             np.asarray(methylated_cols).tolist(),
             strict=True,
         )
@@ -410,6 +408,7 @@ def write_chunk_parquet_files(
     chunk_idx: int,
     sample_name: str,
     total_records: int,
+    total_fragments: int,
     age: int | None,
     group: str | None,
     encoded_chunk: EncodedChunk,
@@ -431,23 +430,17 @@ def write_chunk_parquet_files(
     write_parquet_table(
         temp_dir / f"quant__records_{chunk_idx:06d}.parquet",
         columns={
-            "read_id": [row[0] for row in record_rows],
-            "length": [row[1] for row in record_rows],
-            "template_length": [row[2] for row in record_rows],
-            "reference": [row[3] for row in record_rows],
-            "position": [row[4] for row in record_rows],
-            "xr_tag": [row[5] for row in record_rows],
-            "xg_tag": [row[6] for row in record_rows],
+            "align_id": [row[0] for row in record_rows],
+            "template_length": [row[1] for row in record_rows],
+            "reference": [row[2] for row in record_rows],
+            "position": [row[3] for row in record_rows],
         },
         schema=pa.schema(
             [
-                ("read_id", pa.int64()),
-                ("length", pa.int32()),
+                ("align_id", pa.int64()),
                 ("template_length", pa.int32()),
                 ("reference", pa.string()),
                 ("position", pa.int32()),
-                ("xr_tag", pa.string()),
-                ("xg_tag", pa.string()),
             ]
         ),
     )
@@ -469,12 +462,12 @@ def write_chunk_parquet_files(
     write_parquet_table(
         temp_dir / f"quant__methylation_{chunk_idx:06d}.parquet",
         columns={
-            "read_id": [row[0] for row in methylation_rows],
+            "align_id": [row[0] for row in methylation_rows],
             "position": [row[1] for row in methylation_rows],
         },
         schema=pa.schema(
             [
-                ("read_id", pa.int64()),
+                ("align_id", pa.int64()),
                 ("position", pa.int32()),
             ]
         ),
@@ -484,6 +477,7 @@ def write_chunk_parquet_files(
         columns={
             "sample": [sample_name],
             "total_records": [total_records],
+            "total_fragments": [total_fragments],
             "age": [age],
             "group_name": [group],
         },
@@ -491,6 +485,7 @@ def write_chunk_parquet_files(
             [
                 ("sample", pa.string()),
                 ("total_records", pa.int64()),
+                ("total_fragments", pa.int64()),
                 ("age", pa.int32()),
                 ("group_name", pa.string()),
             ]
@@ -528,6 +523,7 @@ def merge_chunk_parquet_files(
     *,
     sample_name: str,
     total_records: int,
+    total_fragments: int,
     age: int | None,
     group: str | None,
     final_path: Path,
@@ -558,8 +554,8 @@ def merge_chunk_parquet_files(
             )
             """)
         connection.execute(
-            "INSERT INTO quant__samples VALUES (?, ?, ?, ?)",
-            [sample_name, total_records, age, group],
+            "INSERT INTO quant__samples VALUES (?, ?, ?, ?, ?)",
+            [sample_name, total_records, total_fragments, age, group],
         )
     finally:
         connection.close()
@@ -594,6 +590,7 @@ def extract_bam_features_from_bai(
         output_path=output_path,
     )
     temp_dir = Path(tempfile.mkdtemp(prefix=f"{final_path.stem}_", suffix="_parquet"))
+    total_fragments = 0
 
     try:
         for chunk_idx, chunk in yield_record_chunks(
@@ -604,11 +601,14 @@ def extract_bam_features_from_bai(
                 chunk,
                 min_read_length=max(motif_size, min_read_length),
             )
+            chunk_fragments = int(encoded_chunk.align_ids.size)
+            total_fragments += chunk_fragments
             write_chunk_parquet_files(
                 temp_dir,
                 chunk_idx=chunk_idx,
                 sample_name=sample_name,
                 total_records=total_records,
+                total_fragments=chunk_fragments,
                 age=age,
                 group=group,
                 encoded_chunk=encoded_chunk,
@@ -620,6 +620,7 @@ def extract_bam_features_from_bai(
             temp_dir,
             sample_name=sample_name,
             total_records=total_records,
+            total_fragments=total_fragments,
             age=age,
             group=group,
             final_path=final_path,
