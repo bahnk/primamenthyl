@@ -13,5 +13,5 @@ jq -c '.samples[]' config/sample_config.json | while read -r sample; do
 
   DBT_DUCKDB_PATH="$duckdb_path" \
   DBT_DUCKDB_DATABASE="$sample_name" \
-  uv run --project dbt_models dbt run --project-dir dbt_models --profiles-dir dbt_models
+  uv run --project dbt_models dbt run --select tag:individual --project-dir dbt_models --profiles-dir dbt_models
 done

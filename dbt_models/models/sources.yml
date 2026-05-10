@@ -16,6 +16,57 @@ sources:
         description: Sample-level metadata for the DuckDB file.
 
 models:
+  - name: end_motif_distribution
+    description: End motif counts from the merged quant__motifs source, grouped by sample and side.
+    columns:
+      - name: sample
+        tests:
+          - not_null
+      - name: side
+        tests:
+          - not_null
+      - name: motif
+        tests:
+          - not_null
+      - name: motif_count
+        tests:
+          - not_null
+  - name: end_position_distribution
+    description: Distribution of record end_position values by sample from the merged quant__records source.
+    columns:
+      - name: sample
+        tests:
+          - not_null
+      - name: end_position
+        tests:
+          - not_null
+      - name: record_count
+        tests:
+          - not_null
+  - name: fragment_length_distribution
+    description: Distribution of absolute fragment lengths by sample from the merged quant__records source.
+    columns:
+      - name: sample
+        tests:
+          - not_null
+      - name: fragment_length
+        tests:
+          - not_null
+      - name: record_count
+        tests:
+          - not_null
+  - name: start_position_distribution
+    description: Distribution of record start_position values by sample from the merged quant__records source.
+    columns:
+      - name: sample
+        tests:
+          - not_null
+      - name: start_position
+        tests:
+          - not_null
+      - name: record_count
+        tests:
+          - not_null
   - name: stg_fragment_pairing
     description: Counts align_ids per fragment_id and flags whether the fragment is paired.
     columns:

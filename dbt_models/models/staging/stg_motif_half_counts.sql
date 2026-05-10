@@ -1,3 +1,5 @@
+{{ config(tags=['individual']) }}
+
 select
     motif,
     side,

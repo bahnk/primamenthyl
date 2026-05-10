@@ -1,3 +1,5 @@
+{{ config(tags=['individual']) }}
+
 select
     samples.sample,
     avg(record_counts.methylation_count) as mean_methylation_count

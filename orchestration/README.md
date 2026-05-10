@@ -6,6 +6,8 @@ These scripts run the sample pipeline in ordered steps:
 2. extract per-sample DuckDB files from BAM indexes
 3. apply the dbt models to each per-sample DuckDB file
 4. merge all per-sample DuckDB files into one combined DuckDB file
+5. run merged-file dbt models on the combined DuckDB file
+6. generate per-sample plots from the merged DuckDB file
 
 ## Required Dependencies
 
@@ -49,6 +51,8 @@ bash orchestration/00_merge_bam_files.sh
 bash orchestration/01_run_bam_processing.sh
 bash orchestration/02_run_dbt_models.sh
 bash orchestration/03_merge_duckdb_files.sh
+bash orchestration/04_run_merged_dbt_models.sh
+bash orchestration/05_run_plotting.sh
 ```
 
 ## What Each Script Does
@@ -70,7 +74,7 @@ bash orchestration/03_merge_duckdb_files.sh
 `02_run_dbt_models.sh`
 
 - reads `config/sample_config.json` with `jq`
-- runs `dbt run` for each per-sample DuckDB file
+- runs `dbt run --select tag:individual` for each per-sample DuckDB file
 - sets `DBT_DUCKDB_PATH` and `DBT_DUCKDB_DATABASE` per sample before running dbt
 
 `03_merge_duckdb_files.sh`
@@ -78,3 +82,14 @@ bash orchestration/03_merge_duckdb_files.sh
 - runs `uv run --project dbt_models python dbt_models/merge_duckdb_files.py`
 - merges all `*.features.duckdb` files in `OUTPUT_DIR`
 - writes the merged DuckDB file to `$MERGED_DUCKDB_PATH` or the default output path
+
+`04_run_merged_dbt_models.sh`
+
+- runs `dbt run --select tag:merged` on the merged DuckDB file
+- reads the merged file from `$MERGED_DUCKDB_PATH` or `$OUTPUT_DIR/all_samples.features.duckdb`
+
+`05_run_plotting.sh`
+
+- runs the standalone plotting scripts in `plotting/`
+- reads the merged file from `$MERGED_DUCKDB_PATH` or `$OUTPUT_DIR/all_samples.features.duckdb`
+- writes one PDF per sample per plot type into `output/plots`

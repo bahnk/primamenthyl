@@ -1,0 +1,14 @@
+[project]
+name = "primamenthyl-plotting"
+version = "0.1.0"
+description = "Plotting scripts for merged primamenthyl DuckDB outputs."
+requires-python = ">=3.11,<3.14"
+dependencies = [
+  "duckdb",
+  "matplotlib",
+  "pandas",
+  "seaborn",
+]
+
+[tool.uv]
+package = false

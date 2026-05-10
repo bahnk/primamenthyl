@@ -1,3 +1,5 @@
+{{ config(tags=['individual']) }}
+
 with distinct_fragments as (
     select distinct
         start_position,

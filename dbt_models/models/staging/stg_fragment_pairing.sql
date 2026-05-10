@@ -1,3 +1,5 @@
+{{ config(tags=['individual']) }}
+
 select
     fragment_id,
     count(align_id) as align_id_count,

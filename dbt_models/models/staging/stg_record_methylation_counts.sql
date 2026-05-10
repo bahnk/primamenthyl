@@ -1,3 +1,5 @@
+{{ config(tags=['individual']) }}
+
 select
     records.align_id as align_id,
     count(methylation.position) as methylation_count
