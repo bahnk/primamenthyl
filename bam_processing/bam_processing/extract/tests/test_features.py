@@ -78,6 +78,7 @@ def test_extract_bam_features_from_bai_writes_expected_duckdb_tables(
                 """
                 SELECT
                     align_id,
+                    query_id,
                     template_length,
                     reference,
                     position,
@@ -90,10 +91,11 @@ def test_extract_bam_features_from_bai_writes_expected_duckdb_tables(
             assert record_row is not None
             assert isinstance(record_row[0], int)
             assert isinstance(record_row[1], int)
-            assert isinstance(record_row[2], str)
-            assert isinstance(record_row[3], int)
+            assert isinstance(record_row[2], int)
+            assert isinstance(record_row[3], str)
             assert isinstance(record_row[4], int)
             assert isinstance(record_row[5], int)
+            assert isinstance(record_row[6], int)
 
         if motif_row_count > 0:
             motif_sides = {

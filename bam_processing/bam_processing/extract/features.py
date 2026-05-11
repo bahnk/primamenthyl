@@ -35,26 +35,18 @@ _LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
-class EncodedBamRecords:
-    """
-    Encoded BAM record data for downstream array processing.
-    """
-
-    xm: jnp.ndarray
-    positions: jnp.ndarray
-    read_lengths: jnp.ndarray
-    references: tuple[str, ...]
-
-
-@dataclass(frozen=True)
 class EncodedChunk:
     """
     Encoded BAM records and their source read identifiers.
     """
 
+    query_ids: np.ndarray
     align_ids: np.ndarray
     template_lengths: jnp.ndarray
-    encoded: EncodedBamRecords
+    xm: jnp.ndarray
+    positions: jnp.ndarray
+    read_lengths: jnp.ndarray
+    references: tuple[str, ...]
 
 
 def count_motifs(motifs: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
@@ -158,6 +150,7 @@ def encode_record_chunk(
             Encoded chunk data and source read identifiers.
     """
 
+    query_ids = []
     align_ids: list[int] = []
     template_lengths: list[int] = []
     read_lengths: list[int] = []
@@ -175,10 +168,10 @@ def encode_record_chunk(
         query_length = record.query_length or 0
         template_length = record.template_length
         xm_tag = record.get_tag("XM") if record.has_tag("XM") else ""
-
         if query_length < min_read_length:
             continue
 
+        query_ids.append(hash(record.query_name))
         align_ids.append(align_id)
         template_lengths.append(template_length)
         read_lengths.append(query_length)
@@ -192,28 +185,25 @@ def encode_record_chunk(
     if not align_ids:
         empty_int = jnp.array([], dtype=jnp.int32)
         return EncodedChunk(
+            query_ids=np.array([], dtype=np.int64),
             align_ids=np.array([], dtype=np.int64),
             template_lengths=empty_int,
-            encoded=EncodedBamRecords(
-                xm=jnp.empty((0, 0), dtype=jnp.int32),
-                positions=empty_int,
-                read_lengths=empty_int,
-                references=(),
-            ),
+            xm=jnp.empty((0, 0), dtype=jnp.int32),
+            positions=empty_int,
+            read_lengths=empty_int,
+            references=(),
         )
 
     padded_xm = [xm + ([0] * (max_xm_length - len(xm))) for xm in xm_tags]
 
-    encoded = EncodedBamRecords(
+    return EncodedChunk(
+        query_ids=np.array(query_ids, dtype=np.int64),
+        align_ids=np.array(align_ids, dtype=np.int64),
+        template_lengths=jnp.array(template_lengths, dtype=jnp.int32),
         xm=jnp.array(padded_xm, dtype=jnp.int32),
         positions=jnp.array(positions, dtype=jnp.int32),
         read_lengths=jnp.array(read_lengths, dtype=jnp.int32),
         references=tuple(references),
-    )
-    return EncodedChunk(
-        align_ids=np.array(align_ids, dtype=np.int64),
-        template_lengths=jnp.array(template_lengths, dtype=jnp.int32),
-        encoded=encoded,
     )
 
 
@@ -225,6 +215,7 @@ def create_feature_tables(connection: duckdb.DuckDBPyConnection) -> None:
     connection.execute("""
         CREATE TABLE quant__records (
             align_id BIGINT,
+            query_id BIGINT,
             template_length INTEGER,
             reference VARCHAR,
             position INTEGER,
@@ -260,14 +251,14 @@ def build_records_rows(encoded_chunk: EncodedChunk) -> list[tuple]:
     Build DuckDB record rows from an encoded chunk.
     """
 
-    encoded = encoded_chunk.encoded
     start_positions, end_positions = _build_fragment_boundaries(encoded_chunk)
     return list(
         zip(
             encoded_chunk.align_ids.tolist(),
+            encoded_chunk.query_ids.tolist(),
             np.asarray(encoded_chunk.template_lengths).tolist(),
-            list(encoded.references),
-            np.asarray(encoded.positions).tolist(),
+            list(encoded_chunk.references),
+            np.asarray(encoded_chunk.positions).tolist(),
             np.asarray(start_positions).tolist(),
             np.asarray(end_positions).tolist(),
             strict=True,
@@ -282,22 +273,21 @@ def _build_fragment_boundaries(
     Compute 5' and 3' fragment boundaries from chunk arrays.
     """
 
-    encoded = encoded_chunk.encoded
     template_lengths = encoded_chunk.template_lengths
 
     start_mask = (template_lengths < 0).astype(jnp.int32)
     start_positions = (
-        encoded.positions
-        + start_mask * encoded.read_lengths
+        encoded_chunk.positions
+        + start_mask * encoded_chunk.read_lengths
         + start_mask * template_lengths
     )
 
     end_fwd_mask = (template_lengths > 0).astype(jnp.int32)
     end_rev_mask = (template_lengths < 0).astype(jnp.int32)
     end_positions = (
-        encoded.positions
+        encoded_chunk.positions
         + end_fwd_mask * template_lengths
-        + end_rev_mask * encoded.read_lengths
+        + end_rev_mask * encoded_chunk.read_lengths
     )
 
     return start_positions, end_positions
@@ -376,11 +366,10 @@ def build_methylation_rows(encoded_chunk: EncodedChunk) -> list[tuple]:
     Build methylation rows from an encoded chunk.
     """
 
-    encoded = encoded_chunk.encoded
-    if encoded.xm.size == 0:
+    if encoded_chunk.xm.size == 0:
         return []
 
-    methylated_rows, methylated_cols = jnp.nonzero(encoded.xm == ord("Z"))
+    methylated_rows, methylated_cols = jnp.nonzero(encoded_chunk.xm == ord("Z"))
     align_ids = encoded_chunk.align_ids[np.asarray(methylated_rows)]
     return list(
         zip(
@@ -433,15 +422,17 @@ def write_chunk_parquet_files(
         temp_dir / f"quant__records_{chunk_idx:06d}.parquet",
         columns={
             "align_id": [row[0] for row in record_rows],
-            "template_length": [row[1] for row in record_rows],
-            "reference": [row[2] for row in record_rows],
-            "position": [row[3] for row in record_rows],
-            "start_position": [row[4] for row in record_rows],
-            "end_position": [row[5] for row in record_rows],
+            "query_id": [row[1] for row in record_rows],
+            "template_length": [row[2] for row in record_rows],
+            "reference": [row[3] for row in record_rows],
+            "position": [row[4] for row in record_rows],
+            "start_position": [row[5] for row in record_rows],
+            "end_position": [row[6] for row in record_rows],
         },
         schema=pa.schema(
             [
                 ("align_id", pa.int64()),
+                ("query_id", pa.int64()),
                 ("template_length", pa.int32()),
                 ("reference", pa.string()),
                 ("position", pa.int32()),

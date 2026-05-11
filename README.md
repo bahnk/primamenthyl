@@ -27,7 +27,7 @@ The extractor writes four base tables:
 
 - `quant__records`
   One row per retained alignment record. Includes:
-  `align_id`, `template_length`, `reference`, `position`,
+  `align_id`, `query_id`, `template_length`, `reference`, `position`,
   `start_position`, `end_position`.
 - `quant__methylation`
   One row per methylation event, keyed by `align_id`, with a read-local
