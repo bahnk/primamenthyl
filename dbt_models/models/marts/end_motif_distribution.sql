@@ -5,4 +5,4 @@ select
     side,
     motif,
     count as motif_count
-from {{ source('quant', 'quant__motifs') }}
+from {{ source('quant', 'quant__motif_counts') }}

@@ -10,7 +10,7 @@ sources:
         description: One row per retained BAM record.
       - name: quant__methylation
         description: One row per methylation event identified on a record.
-      - name: quant__motifs
+      - name: quant__motif_counts
         description: Motif counts aggregated from retained BAM records.
       - name: quant__samples
         description: Sample-level metadata for the DuckDB file.
@@ -31,7 +31,7 @@ models:
         tests:
           - not_null
   - name: end_motif_distribution
-    description: End motif counts from the merged quant__motifs source, grouped by sample and side.
+    description: End motif counts from the merged quant__motif_counts source, grouped by sample and side.
     columns:
       - name: sample
         tests:

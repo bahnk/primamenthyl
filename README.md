@@ -32,7 +32,7 @@ The extractor writes four base tables:
 - `quant__methylation`
   One row per methylation event, keyed by `align_id`, with a read-local
   `position`.
-- `quant__motifs`
+- `quant__motif_counts`
   Aggregated end-motif counts.
 - `quant__samples`
   Sample metadata such as `sample`, `total_records`, `total_fragments`,

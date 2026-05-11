@@ -230,7 +230,7 @@ def create_feature_tables(connection: duckdb.DuckDBPyConnection) -> None:
         )
         """)
     connection.execute("""
-        CREATE TABLE quant__motifs (
+        CREATE TABLE quant__motif_counts (
             motif VARCHAR,
             count INTEGER,
             side VARCHAR
@@ -483,7 +483,7 @@ def write_chunk_parquet_files(
         ),
     )
     write_parquet_table(
-        temp_dir / f"quant__motifs_{chunk_idx:06d}.parquet",
+        temp_dir / f"quant__motif_counts_{chunk_idx:06d}.parquet",
         columns={
             "motif": [row[0] for row in motif_rows],
             "count": [row[1] for row in motif_rows],
@@ -577,9 +577,9 @@ def merge_chunk_parquet_files(
             )
             """)
         connection.execute(f"""
-            INSERT INTO quant__motifs
+            INSERT INTO quant__motif_counts
             SELECT motif, SUM(count) AS count, side
-            FROM read_parquet('{temp_dir / "quant__motifs_*.parquet"}')
+            FROM read_parquet('{temp_dir / "quant__motif_counts_*.parquet"}')
             GROUP BY motif, side
             """)
         connection.execute(f"""
