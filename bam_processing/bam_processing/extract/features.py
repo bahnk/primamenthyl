@@ -41,6 +41,7 @@ class EncodedChunk:
     """
 
     query_ids: np.ndarray
+    is_read1: np.ndarray
     align_ids: np.ndarray
     template_lengths: jnp.ndarray
     xm: jnp.ndarray
@@ -151,6 +152,7 @@ def encode_record_chunk(
     """
 
     query_ids = []
+    is_read1 = []
     align_ids: list[int] = []
     template_lengths: list[int] = []
     read_lengths: list[int] = []
@@ -172,6 +174,7 @@ def encode_record_chunk(
             continue
 
         query_ids.append(hash(record.query_name))
+        is_read1.append(np.uint8(record.is_read1))
         align_ids.append(align_id)
         template_lengths.append(template_length)
         read_lengths.append(query_length)
@@ -186,6 +189,7 @@ def encode_record_chunk(
         empty_int = jnp.array([], dtype=jnp.int32)
         return EncodedChunk(
             query_ids=np.array([], dtype=np.int64),
+            is_read1=np.array([], dtype=np.uint8),
             align_ids=np.array([], dtype=np.int64),
             template_lengths=empty_int,
             xm=jnp.empty((0, 0), dtype=jnp.int32),
@@ -198,6 +202,7 @@ def encode_record_chunk(
 
     return EncodedChunk(
         query_ids=np.array(query_ids, dtype=np.int64),
+        is_read1=np.array(is_read1, dtype=np.uint8),
         align_ids=np.array(align_ids, dtype=np.int64),
         template_lengths=jnp.array(template_lengths, dtype=jnp.int32),
         xm=jnp.array(padded_xm, dtype=jnp.int32),
@@ -216,6 +221,7 @@ def create_feature_tables(connection: duckdb.DuckDBPyConnection) -> None:
         CREATE TABLE quant__records (
             align_id BIGINT,
             query_id BIGINT,
+            is_read1 UTINYINT,
             template_length INTEGER,
             reference VARCHAR,
             position INTEGER,
@@ -240,6 +246,7 @@ def create_feature_tables(connection: duckdb.DuckDBPyConnection) -> None:
         CREATE TABLE quant__samples (
             sample VARCHAR,
             total_records BIGINT,
+            total_fragments BIGINT,
             age INTEGER,
             group_name VARCHAR
         )
@@ -256,6 +263,7 @@ def build_records_rows(encoded_chunk: EncodedChunk) -> list[tuple]:
         zip(
             encoded_chunk.align_ids.tolist(),
             encoded_chunk.query_ids.tolist(),
+            encoded_chunk.is_read1.tolist(),
             np.asarray(encoded_chunk.template_lengths).tolist(),
             list(encoded_chunk.references),
             np.asarray(encoded_chunk.positions).tolist(),
@@ -305,6 +313,14 @@ def _extract_valid_motifs(
         return jnp.empty((0, 0), dtype=jnp.uint8)
 
     valid_mask = ((indices >= 0) & (indices < reference.shape[0])).all(axis=1)
+
+    if not valid_mask.all():
+        _LOGGER.info(
+            "Found %s invalid motif indices out of %s total; skipping those motifs",
+            (~valid_mask).sum(),
+            valid_mask.size,
+        )
+
     valid_indices = indices[valid_mask]
     if valid_indices.size == 0:
         return jnp.empty((0, indices.shape[1]), dtype=jnp.uint8)
@@ -319,13 +335,36 @@ def build_motif_rows(
     reference: jnp.ndarray,
 ) -> list[tuple]:
     """
-    Build motif rows from a chunk using reference-derived fragment motifs.
+    Build motif rows from read1 records using reference-derived fragment motifs.
     """
 
     if encoded_chunk.align_ids.size == 0:
         return []
 
-    start_positions, end_positions = _build_fragment_boundaries(encoded_chunk)
+    read1_mask = encoded_chunk.is_read1 == 1
+    if not np.any(read1_mask):
+        return []
+
+    read1_chunk = EncodedChunk(
+        query_ids=encoded_chunk.query_ids[read1_mask],
+        is_read1=encoded_chunk.is_read1[read1_mask],
+        align_ids=encoded_chunk.align_ids[read1_mask],
+        template_lengths=encoded_chunk.template_lengths[read1_mask],
+        xm=encoded_chunk.xm[read1_mask],
+        positions=encoded_chunk.positions[read1_mask],
+        read_lengths=encoded_chunk.read_lengths[read1_mask],
+        references=tuple(
+            reference_name
+            for reference_name, keep in zip(
+                encoded_chunk.references,
+                read1_mask.tolist(),
+                strict=True,
+            )
+            if keep
+        ),
+    )
+
+    start_positions, end_positions = _build_fragment_boundaries(read1_chunk)
 
     five_prime_indices = (
         jnp.arange(motif_size, dtype=jnp.int32) + start_positions[:, None] - 1
@@ -423,16 +462,18 @@ def write_chunk_parquet_files(
         columns={
             "align_id": [row[0] for row in record_rows],
             "query_id": [row[1] for row in record_rows],
-            "template_length": [row[2] for row in record_rows],
-            "reference": [row[3] for row in record_rows],
-            "position": [row[4] for row in record_rows],
-            "start_position": [row[5] for row in record_rows],
-            "end_position": [row[6] for row in record_rows],
+            "is_read1": [row[2] for row in record_rows],
+            "template_length": [row[3] for row in record_rows],
+            "reference": [row[4] for row in record_rows],
+            "position": [row[5] for row in record_rows],
+            "start_position": [row[6] for row in record_rows],
+            "end_position": [row[7] for row in record_rows],
         },
         schema=pa.schema(
             [
                 ("align_id", pa.int64()),
                 ("query_id", pa.int64()),
+                ("is_read1", pa.uint8()),
                 ("template_length", pa.int32()),
                 ("reference", pa.string()),
                 ("position", pa.int32()),
@@ -548,7 +589,11 @@ def merge_chunk_parquet_files(
             )
             """)
         connection.execute(
-            "INSERT INTO quant__samples VALUES (?, ?, ?, ?)",
+            """
+            INSERT INTO quant__samples
+            SELECT ?, ?, COUNT(DISTINCT query_id), ?, ?
+            FROM quant__records
+            """,
             [sample_name, total_records, age, group],
         )
     finally:

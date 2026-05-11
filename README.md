@@ -27,7 +27,7 @@ The extractor writes four base tables:
 
 - `quant__records`
   One row per retained alignment record. Includes:
-  `align_id`, `query_id`, `template_length`, `reference`, `position`,
+  `align_id`, `query_id`, `is_read1`, `template_length`, `reference`, `position`,
   `start_position`, `end_position`.
 - `quant__methylation`
   One row per methylation event, keyed by `align_id`, with a read-local
@@ -35,7 +35,8 @@ The extractor writes four base tables:
 - `quant__motifs`
   Aggregated end-motif counts.
 - `quant__samples`
-  Sample metadata such as `sample`, `age`, and `group_name`.
+  Sample metadata such as `sample`, `total_records`, `total_fragments`,
+  `age`, and `group_name`.
 
 This layer is the only part that reads BAM data directly. Everything
 downstream works from DuckDB.
