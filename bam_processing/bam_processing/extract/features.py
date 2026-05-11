@@ -11,6 +11,7 @@ import tempfile
 
 import duckdb
 import jax
+jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 import numpy as np
 import pyarrow as pa
@@ -40,9 +41,9 @@ class EncodedChunk:
     Encoded BAM records and their source read identifiers.
     """
 
-    query_ids: np.ndarray
-    is_read1: np.ndarray
-    align_ids: np.ndarray
+    query_ids: jnp.ndarray
+    is_read1: jnp.ndarray
+    align_ids: jnp.ndarray
     template_lengths: jnp.ndarray
     xm: jnp.ndarray
     positions: jnp.ndarray
@@ -56,7 +57,7 @@ class MotifIndices:
     Per-read1 motif extraction inputs shared by motif builders.
     """
 
-    align_ids: np.ndarray
+    align_ids: jnp.ndarray
     five_prime_indices: jnp.ndarray
     three_prime_indices: jnp.ndarray
 
@@ -199,9 +200,9 @@ def encode_record_chunk(
     if not align_ids:
         empty_int = jnp.array([], dtype=jnp.int32)
         return EncodedChunk(
-            query_ids=np.array([], dtype=np.int64),
-            is_read1=np.array([], dtype=np.uint8),
-            align_ids=np.array([], dtype=np.int64),
+            query_ids=jnp.array([], dtype=jnp.int64),
+            is_read1=jnp.array([], dtype=jnp.uint8),
+            align_ids=jnp.array([], dtype=jnp.int64),
             template_lengths=empty_int,
             xm=jnp.empty((0, 0), dtype=jnp.int32),
             positions=empty_int,
@@ -212,9 +213,9 @@ def encode_record_chunk(
     padded_xm = [xm + ([0] * (max_xm_length - len(xm))) for xm in xm_tags]
 
     return EncodedChunk(
-        query_ids=np.array(query_ids, dtype=np.int64),
-        is_read1=np.array(is_read1, dtype=np.uint8),
-        align_ids=np.array(align_ids, dtype=np.int64),
+        query_ids=jnp.array(query_ids, dtype=jnp.int64),
+        is_read1=jnp.array(is_read1, dtype=jnp.uint8),
+        align_ids=jnp.array(align_ids, dtype=jnp.int64),
         template_lengths=jnp.array(template_lengths, dtype=jnp.int32),
         xm=jnp.array(padded_xm, dtype=jnp.int32),
         positions=jnp.array(positions, dtype=jnp.int32),
@@ -359,7 +360,7 @@ def build_motif_indices(
     if encoded_chunk.align_ids.size == 0:
         empty_indices = jnp.empty((0, motif_size), dtype=jnp.int32)
         return MotifIndices(
-            align_ids=np.array([], dtype=np.int64),
+            align_ids=jnp.array([], dtype=jnp.int64),
             five_prime_indices=empty_indices,
             three_prime_indices=empty_indices,
         )
@@ -368,7 +369,7 @@ def build_motif_indices(
     if not np.any(read1_mask):
         empty_indices = jnp.empty((0, motif_size), dtype=jnp.int32)
         return MotifIndices(
-            align_ids=np.array([], dtype=np.int64),
+            align_ids=jnp.array([], dtype=jnp.int64),
             five_prime_indices=empty_indices,
             three_prime_indices=empty_indices,
         )
@@ -404,7 +405,7 @@ def build_motif_indices(
     )
 
     return MotifIndices(
-        align_ids=np.asarray(read1_chunk.align_ids),
+        align_ids=read1_chunk.align_ids,
         five_prime_indices=five_prime_indices,
         three_prime_indices=three_prime_indices,
     )
