@@ -130,6 +130,18 @@ models:
       - name: record_count
         tests:
           - not_null
+  - name: fragment_length_stats
+    description: Per-sample mean and median fragment length computed from deduplicated query fragments.
+    columns:
+      - name: sample
+        tests:
+          - not_null
+      - name: mean_fragment_length
+        tests:
+          - not_null
+      - name: median_fragment_length
+        tests:
+          - not_null
   - name: fragment_count_bins
     description: Per-sample fragment counts by fixed 100000 bp chromosome 21 bins using fragment midpoints from stg_query_fragments.
     columns:

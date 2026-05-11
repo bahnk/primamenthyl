@@ -51,6 +51,7 @@ uv run dbt --profiles-dir . run
   bp chromosome 21 bins using fragment midpoints.
 - `fragment_fraction_bins`: per-sample fragment fractions by fixed
   `100000` bp chromosome 21 bins using fragment midpoints.
+- `fragment_length_stats`: per-sample mean and median fragment length.
 - `stg_record_methylation_counts`: number of methylation events per
   record, including records with zero methylation events.
 - `sample_mean_methylation`: mean number of methylation events per
