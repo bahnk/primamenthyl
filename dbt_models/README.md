@@ -29,6 +29,8 @@ uv run dbt --profiles-dir . run
 
 ## Models
 
+- `stg_methylation_events`: unions the six raw methylation tables into a
+  single event stream with context and methylation-state columns.
 - `stg_record_methylation_counts`: number of methylation events per
   record, including records with zero methylation events.
 - `sample_mean_methylation`: mean number of methylation events per

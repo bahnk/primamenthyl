@@ -8,15 +8,25 @@ sources:
     tables:
       - name: quant__records
         description: One row per retained BAM record.
-      - name: quant__methylation
-        description: One row per methylation event identified on a record.
+      - name: quant__cpg_methylated
+        description: One row per CpG methylated event identified on a record.
+      - name: quant__cpg_unmethylated
+        description: One row per CpG unmethylated event identified on a record.
+      - name: quant__chg_methylated
+        description: One row per CHG methylated event identified on a record.
+      - name: quant__chg_unmethylated
+        description: One row per CHG unmethylated event identified on a record.
+      - name: quant__chh_methylated
+        description: One row per CHH methylated event identified on a record.
+      - name: quant__chh_unmethylated
+        description: One row per CHH unmethylated event identified on a record.
       - name: quant__motif_counts
         description: Motif counts aggregated from retained BAM records.
       - name: quant__samples
         description: Sample-level metadata for the DuckDB file.
 models:
   - name: methylation_position_distribution
-    description: Distribution of methylation event counts by 100000 bp genomic bins and sample from merged quant__methylation and quant__records sources.
+    description: Distribution of methylation event counts by 100000 bp genomic bins, sample, context, and methylation state from merged methylation-event and quant__records sources.
     columns:
       - name: sample
         tests:
@@ -27,7 +37,28 @@ models:
       - name: position_bin
         tests:
           - not_null
+      - name: context
+        tests:
+          - not_null
+      - name: methylated
+        tests:
+          - not_null
       - name: methylation_count
+        tests:
+          - not_null
+  - name: stg_methylation_events
+    description: Unified methylation event stream across CpG, CHG, and CHH contexts, with explicit methylation state.
+    columns:
+      - name: align_id
+        tests:
+          - not_null
+      - name: methylation_offset
+        tests:
+          - not_null
+      - name: context
+        tests:
+          - not_null
+      - name: methylated
         tests:
           - not_null
   - name: end_motif_distribution
@@ -82,12 +113,18 @@ models:
         tests:
           - not_null
   - name: stg_methylation_positions
-    description: Resolves methylation offsets to genomic positions by joining quant__methylation to quant__records on align_id.
+    description: Resolves methylation offsets to genomic positions by joining unified methylation events to quant__records on align_id.
     columns:
       - name: align_id
         tests:
           - not_null
       - name: reference
+        tests:
+          - not_null
+      - name: context
+        tests:
+          - not_null
+      - name: methylated
         tests:
           - not_null
       - name: methylation_offset

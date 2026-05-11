@@ -23,15 +23,17 @@ Input:
 Output:
 - one DuckDB file per sample in `$OUTPUT_DIR/duckdb/<sample>.features.duckdb`
 
-The extractor writes four base tables:
+The extractor writes base tables including:
 
 - `quant__records`
   One row per retained alignment record. Includes:
   `align_id`, `query_id`, `is_read1`, `template_length`, `reference`, `position`,
   `start_position`, `end_position`.
-- `quant__methylation`
+- `quant__cpg_methylated`, `quant__cpg_unmethylated`,
+  `quant__chg_methylated`, `quant__chg_unmethylated`,
+  `quant__chh_methylated`, `quant__chh_unmethylated`
   One row per methylation event, keyed by `align_id`, with a read-local
-  `position`.
+  `position`, split by sequence context and methylation state.
 - `quant__motif_counts`
   Aggregated end-motif counts.
 - `quant__samples`
@@ -63,8 +65,8 @@ tables. Examples:
 - `stg_fragment_pairing`
   Counts records per fragment and marks whether a fragment is paired.
 - `stg_methylation_positions`
-  Converts methylation offsets into genomic positions by joining
-  `quant__methylation` with `quant__records`.
+  Converts unified methylation-event offsets into genomic positions by
+  joining them with `quant__records`.
 
 These models stay inside each sample’s DuckDB file.
 
@@ -99,10 +101,10 @@ These tables are designed for downstream plotting and modeling.
 Example:
 
 - `methylation_position_distribution`
-  joins merged `quant__records` and `quant__methylation`,
+  joins merged `quant__records` and the unified methylation-event stream,
   resolves genomic methylation positions,
   bins them into 100000 bp windows,
-  and groups by `sample` and `reference`.
+  and groups by `sample`, `reference`, context, and methylation state.
 
 ### 5. `plotting/`: merged DuckDB -> PDFs
 

@@ -33,6 +33,20 @@ _NUCLEOTIDE_ENCODING[ord("N")] = 4
 _DECODING_ALPHABET = np.array(["A", "C", "G", "T", "N"], dtype="<U1")
 _DEFAULT_CHUNK_SIZE = 1_000_000
 _LOGGER = logging.getLogger(__name__)
+_METHYLATION_TABLE_CODES = {
+    "quant__cpg_methylated": ord("Z"),
+    "quant__cpg_unmethylated": ord("z"),
+    "quant__chg_methylated": ord("X"),
+    "quant__chg_unmethylated": ord("x"),
+    "quant__chh_methylated": ord("H"),
+    "quant__chh_unmethylated": ord("h"),
+}
+_METHYLATION_TABLE_SCHEMA = pa.schema(
+    [
+        ("align_id", pa.int64()),
+        ("position", pa.int32()),
+    ]
+)
 
 
 @dataclass(frozen=True)
@@ -256,7 +270,37 @@ def create_feature_tables(connection: duckdb.DuckDBPyConnection) -> None:
         )
         """)
     connection.execute("""
-        CREATE TABLE quant__methylation (
+        CREATE TABLE quant__cpg_methylated (
+            align_id BIGINT,
+            position INTEGER
+        )
+        """)
+    connection.execute("""
+        CREATE TABLE quant__cpg_unmethylated (
+            align_id BIGINT,
+            position INTEGER
+        )
+        """)
+    connection.execute("""
+        CREATE TABLE quant__chg_methylated (
+            align_id BIGINT,
+            position INTEGER
+        )
+        """)
+    connection.execute("""
+        CREATE TABLE quant__chg_unmethylated (
+            align_id BIGINT,
+            position INTEGER
+        )
+        """)
+    connection.execute("""
+        CREATE TABLE quant__chh_methylated (
+            align_id BIGINT,
+            position INTEGER
+        )
+        """)
+    connection.execute("""
+        CREATE TABLE quant__chh_unmethylated (
             align_id BIGINT,
             position INTEGER
         )
@@ -504,23 +548,29 @@ def build_motif_count_rows(
     return rows
 
 
-def build_methylation_rows(encoded_chunk: EncodedChunk) -> list[tuple]:
+def build_methylation_rows(encoded_chunk: EncodedChunk) -> dict[str, list[tuple]]:
     """
-    Build methylation rows from an encoded chunk.
+    Build methylation rows from an encoded chunk, split by context/state.
     """
 
     if encoded_chunk.xm.size == 0:
-        return []
+        return {
+            table_name: []
+            for table_name in _METHYLATION_TABLE_CODES
+        }
 
-    methylated_rows, methylated_cols = jnp.nonzero(encoded_chunk.xm == ord("Z"))
-    align_ids = encoded_chunk.align_ids[np.asarray(methylated_rows)]
-    return list(
-        zip(
-            align_ids.tolist(),
-            np.asarray(methylated_cols).tolist(),
-            strict=True,
+    methylation_rows: dict[str, list[tuple]] = {}
+    for table_name, xm_code in _METHYLATION_TABLE_CODES.items():
+        rows, cols = jnp.nonzero(encoded_chunk.xm == xm_code)
+        align_ids = encoded_chunk.align_ids[np.asarray(rows)]
+        methylation_rows[table_name] = list(
+            zip(
+                align_ids.tolist(),
+                np.asarray(cols).tolist(),
+                strict=True,
+            )
         )
-    )
+    return methylation_rows
 
 
 def write_parquet_table(
@@ -566,7 +616,7 @@ def write_chunk_parquet_files(
         motif_indices,
         reference=reference,
     )
-    methylation_rows = build_methylation_rows(encoded_chunk)
+    methylation_rows_by_table = build_methylation_rows(encoded_chunk)
 
     write_parquet_table(
         temp_dir / f"quant__records_{chunk_idx:06d}.parquet",
@@ -623,19 +673,15 @@ def write_chunk_parquet_files(
             ]
         ),
     )
-    write_parquet_table(
-        temp_dir / f"quant__methylation_{chunk_idx:06d}.parquet",
-        columns={
-            "align_id": [row[0] for row in methylation_rows],
-            "position": [row[1] for row in methylation_rows],
-        },
-        schema=pa.schema(
-            [
-                ("align_id", pa.int64()),
-                ("position", pa.int32()),
-            ]
-        ),
-    )
+    for table_name, methylation_rows in methylation_rows_by_table.items():
+        write_parquet_table(
+            temp_dir / f"{table_name}_{chunk_idx:06d}.parquet",
+            columns={
+                "align_id": [row[0] for row in methylation_rows],
+                "position": [row[1] for row in methylation_rows],
+            },
+            schema=_METHYLATION_TABLE_SCHEMA,
+        )
     write_parquet_table(
         temp_dir / f"quant__samples_{chunk_idx:06d}.parquet",
         columns={
@@ -714,12 +760,13 @@ def merge_chunk_parquet_files(
             FROM read_parquet('{temp_dir / "quant__motif_counts_*.parquet"}')
             GROUP BY motif, side
             """)
-        connection.execute(f"""
-            INSERT INTO quant__methylation
-            SELECT * FROM read_parquet(
-                '{temp_dir / "quant__methylation_*.parquet"}'
-            )
-            """)
+        for table_name in _METHYLATION_TABLE_CODES:
+            connection.execute(f"""
+                INSERT INTO {table_name}
+                SELECT * FROM read_parquet(
+                    '{temp_dir / f"{table_name}_*.parquet"}'
+                )
+                """)
         connection.execute(
             """
             INSERT INTO quant__samples

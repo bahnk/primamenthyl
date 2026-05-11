@@ -42,7 +42,12 @@ def test_extract_bam_features_from_bai_writes_expected_duckdb_tables(
     try:
         tables = {row[0] for row in connection.execute("SHOW TABLES").fetchall()}
         assert tables == {
-            "quant__methylation",
+            "quant__chg_methylated",
+            "quant__chg_unmethylated",
+            "quant__chh_methylated",
+            "quant__chh_unmethylated",
+            "quant__cpg_methylated",
+            "quant__cpg_unmethylated",
             "quant__motifs",
             "quant__motif_counts",
             "quant__records",
@@ -70,9 +75,17 @@ def test_extract_bam_features_from_bai_writes_expected_duckdb_tables(
         motif_row_count = connection.execute(
             "SELECT COUNT(*) FROM quant__motif_counts"
         ).fetchone()[0]
-        methylation_count = connection.execute(
-            "SELECT COUNT(*) FROM quant__methylation"
-        ).fetchone()[0]
+        methylation_count = sum(
+            connection.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0]
+            for table_name in (
+                "quant__cpg_methylated",
+                "quant__cpg_unmethylated",
+                "quant__chg_methylated",
+                "quant__chg_unmethylated",
+                "quant__chh_methylated",
+                "quant__chh_unmethylated",
+            )
+        )
 
         assert record_count >= 0
         assert motifs_row_count >= 0

@@ -3,8 +3,10 @@
 select
     methylation.align_id,
     records.reference,
-    methylation.position as methylation_offset,
-    records.position + methylation.position as position
-from {{ source('quant', 'quant__methylation') }} as methylation
+    methylation.context,
+    methylation.methylated,
+    methylation.methylation_offset,
+    records.position + methylation.methylation_offset as position
+from {{ ref('stg_methylation_events') }} as methylation
 inner join {{ source('quant', 'quant__records') }} as records
     on methylation.align_id = records.align_id

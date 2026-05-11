@@ -2,7 +2,7 @@
 
 `bam-processing` extracts feature tables from a single indexed BAM
 input. The CLI accepts one `.bai` file and writes a DuckDB database with
-record, motif, methylation, and sample tables.
+record, motif, six methylation-context tables, and sample tables.
 
 ## Install with `uv`
 
