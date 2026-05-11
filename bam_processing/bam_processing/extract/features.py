@@ -50,6 +50,17 @@ class EncodedChunk:
     references: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class MotifIndices:
+    """
+    Per-read1 motif extraction inputs shared by motif builders.
+    """
+
+    align_ids: np.ndarray
+    five_prime_indices: jnp.ndarray
+    three_prime_indices: jnp.ndarray
+
+
 def count_motifs(motifs: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
     """
     Count repeated motif rows in an encoded motif matrix.
@@ -230,6 +241,13 @@ def create_feature_tables(connection: duckdb.DuckDBPyConnection) -> None:
         )
         """)
     connection.execute("""
+        CREATE TABLE quant__motifs (
+            align_id BIGINT,
+            five_prime_motif VARCHAR,
+            three_prime_motif VARCHAR
+        )
+        """)
+    connection.execute("""
         CREATE TABLE quant__motif_counts (
             motif VARCHAR,
             count INTEGER,
@@ -304,15 +322,16 @@ def _build_fragment_boundaries(
 def _extract_valid_motifs(
     reference: jnp.ndarray,
     indices: jnp.ndarray,
-) -> jnp.ndarray:
+) -> tuple[jnp.ndarray, np.ndarray]:
     """
     Gather motif rows that lie entirely within the reference array.
     """
 
     if indices.size == 0:
-        return jnp.empty((0, 0), dtype=jnp.uint8)
+        return jnp.empty((0, 0), dtype=jnp.uint8), np.array([], dtype=bool)
 
     valid_mask = ((indices >= 0) & (indices < reference.shape[0])).all(axis=1)
+    valid_mask_np = np.asarray(valid_mask)
 
     if not valid_mask.all():
         _LOGGER.info(
@@ -323,27 +342,36 @@ def _extract_valid_motifs(
 
     valid_indices = indices[valid_mask]
     if valid_indices.size == 0:
-        return jnp.empty((0, indices.shape[1]), dtype=jnp.uint8)
+        return jnp.empty((0, indices.shape[1]), dtype=jnp.uint8), valid_mask_np
 
-    return reference[valid_indices]
+    return reference[valid_indices], valid_mask_np
 
 
-def build_motif_rows(
+def build_motif_indices(
     encoded_chunk: EncodedChunk,
     *,
     motif_size: int,
-    reference: jnp.ndarray,
-) -> list[tuple]:
+) -> MotifIndices:
     """
-    Build motif rows from read1 records using reference-derived fragment motifs.
+    Build shared motif indices from read1 records using fragment boundaries.
     """
 
     if encoded_chunk.align_ids.size == 0:
-        return []
+        empty_indices = jnp.empty((0, motif_size), dtype=jnp.int32)
+        return MotifIndices(
+            align_ids=np.array([], dtype=np.int64),
+            five_prime_indices=empty_indices,
+            three_prime_indices=empty_indices,
+        )
 
     read1_mask = encoded_chunk.is_read1 == 1
     if not np.any(read1_mask):
-        return []
+        empty_indices = jnp.empty((0, motif_size), dtype=jnp.int32)
+        return MotifIndices(
+            align_ids=np.array([], dtype=np.int64),
+            five_prime_indices=empty_indices,
+            three_prime_indices=empty_indices,
+        )
 
     read1_chunk = EncodedChunk(
         query_ids=encoded_chunk.query_ids[read1_mask],
@@ -375,10 +403,81 @@ def build_motif_rows(
         - 1
     )
 
-    five_prime_motifs = _extract_valid_motifs(reference, five_prime_indices)
-    three_prime_motifs = _extract_valid_motifs(reference, three_prime_indices)
+    return MotifIndices(
+        align_ids=np.asarray(read1_chunk.align_ids),
+        five_prime_indices=five_prime_indices,
+        three_prime_indices=three_prime_indices,
+    )
+
+
+def _decode_indexed_motifs(
+    reference: jnp.ndarray,
+    indices: jnp.ndarray,
+) -> list[str | None]:
+    """
+    Decode motif indices into strings while preserving row alignment.
+    """
+
+    motifs, valid_mask = _extract_valid_motifs(reference, indices)
+    decoded_valid = decode_motifs(np.asarray(motifs)).tolist()
+    decoded: list[str | None] = [None] * len(valid_mask)
+
+    decoded_iter = iter(decoded_valid)
+    for row_idx, is_valid in enumerate(valid_mask.tolist()):
+        if is_valid:
+            decoded[row_idx] = next(decoded_iter)
+
+    return decoded
+
+
+def build_motifs_rows(
+    motif_indices: MotifIndices,
+    *,
+    reference: jnp.ndarray,
+) -> list[tuple]:
+    """
+    Build per-align_id end motif rows from shared motif indices.
+    """
+
+    if motif_indices.align_ids.size == 0:
+        return []
+
+    five_prime_motifs = _decode_indexed_motifs(
+        reference,
+        motif_indices.five_prime_indices,
+    )
+    three_prime_motifs = _decode_indexed_motifs(
+        reference,
+        motif_indices.three_prime_indices,
+    )
+
+    return list(
+        zip(
+            motif_indices.align_ids.tolist(),
+            five_prime_motifs,
+            three_prime_motifs,
+            strict=True,
+        )
+    )
+
+
+def build_motif_count_rows(
+    motif_indices: MotifIndices,
+    *,
+    reference: jnp.ndarray,
+) -> list[tuple]:
+    """
+    Build aggregated motif count rows from shared motif indices.
+    """
+
+    if motif_indices.align_ids.size == 0:
+        return []
 
     rows: list[tuple] = []
+    five_prime_motifs, _ = _extract_valid_motifs(
+        reference,
+        motif_indices.five_prime_indices,
+    )
     if five_prime_motifs.size > 0:
         unique_motifs, counts = count_motifs(five_prime_motifs)
         for motif, count in zip(
@@ -388,6 +487,10 @@ def build_motif_rows(
         ):
             rows.append((motif, count, "five_prime"))
 
+    three_prime_motifs, _ = _extract_valid_motifs(
+        reference,
+        motif_indices.three_prime_indices,
+    )
     if three_prime_motifs.size > 0:
         unique_motifs, counts = count_motifs(three_prime_motifs)
         for motif, count in zip(
@@ -450,9 +553,16 @@ def write_chunk_parquet_files(
     """
 
     record_rows = build_records_rows(encoded_chunk)
-    motif_rows = build_motif_rows(
+    motif_indices = build_motif_indices(
         encoded_chunk,
         motif_size=motif_size,
+    )
+    motifs_rows = build_motifs_rows(
+        motif_indices,
+        reference=reference,
+    )
+    motif_count_rows = build_motif_count_rows(
+        motif_indices,
         reference=reference,
     )
     methylation_rows = build_methylation_rows(encoded_chunk)
@@ -483,11 +593,26 @@ def write_chunk_parquet_files(
         ),
     )
     write_parquet_table(
+        temp_dir / f"quant__motifs_{chunk_idx:06d}.parquet",
+        columns={
+            "align_id": [row[0] for row in motifs_rows],
+            "five_prime_motif": [row[1] for row in motifs_rows],
+            "three_prime_motif": [row[2] for row in motifs_rows],
+        },
+        schema=pa.schema(
+            [
+                ("align_id", pa.int64()),
+                ("five_prime_motif", pa.string()),
+                ("three_prime_motif", pa.string()),
+            ]
+        ),
+    )
+    write_parquet_table(
         temp_dir / f"quant__motif_counts_{chunk_idx:06d}.parquet",
         columns={
-            "motif": [row[0] for row in motif_rows],
-            "count": [row[1] for row in motif_rows],
-            "side": [row[2] for row in motif_rows],
+            "motif": [row[0] for row in motif_count_rows],
+            "count": [row[1] for row in motif_count_rows],
+            "side": [row[2] for row in motif_count_rows],
         },
         schema=pa.schema(
             [
@@ -574,6 +699,12 @@ def merge_chunk_parquet_files(
             INSERT INTO quant__records
             SELECT * FROM read_parquet(
                 '{temp_dir / "quant__records_*.parquet"}'
+            )
+            """)
+        connection.execute(f"""
+            INSERT INTO quant__motifs
+            SELECT * FROM read_parquet(
+                '{temp_dir / "quant__motifs_*.parquet"}'
             )
             """)
         connection.execute(f"""

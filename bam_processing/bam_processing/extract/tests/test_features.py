@@ -43,6 +43,7 @@ def test_extract_bam_features_from_bai_writes_expected_duckdb_tables(
         tables = {row[0] for row in connection.execute("SHOW TABLES").fetchall()}
         assert tables == {
             "quant__methylation",
+            "quant__motifs",
             "quant__motif_counts",
             "quant__records",
             "quant__samples",
@@ -63,6 +64,9 @@ def test_extract_bam_features_from_bai_writes_expected_duckdb_tables(
         record_count = connection.execute(
             "SELECT COUNT(*) FROM quant__records"
         ).fetchone()[0]
+        motifs_row_count = connection.execute(
+            "SELECT COUNT(*) FROM quant__motifs"
+        ).fetchone()[0]
         motif_row_count = connection.execute(
             "SELECT COUNT(*) FROM quant__motif_counts"
         ).fetchone()[0]
@@ -71,6 +75,7 @@ def test_extract_bam_features_from_bai_writes_expected_duckdb_tables(
         ).fetchone()[0]
 
         assert record_count >= 0
+        assert motifs_row_count >= 0
         assert motif_row_count >= 0
         assert methylation_count >= 0
 
@@ -99,6 +104,19 @@ def test_extract_bam_features_from_bai_writes_expected_duckdb_tables(
             assert isinstance(record_row[5], int)
             assert isinstance(record_row[6], int)
             assert isinstance(record_row[7], int)
+
+        if motifs_row_count > 0:
+            motifs_row = connection.execute(
+                """
+                SELECT align_id, five_prime_motif, three_prime_motif
+                FROM quant__motifs
+                LIMIT 1
+                """
+            ).fetchone()
+            assert motifs_row is not None
+            assert isinstance(motifs_row[0], int)
+            assert motifs_row[1] is None or isinstance(motifs_row[1], str)
+            assert motifs_row[2] is None or isinstance(motifs_row[2], str)
 
         if motif_row_count > 0:
             motif_sides = {
