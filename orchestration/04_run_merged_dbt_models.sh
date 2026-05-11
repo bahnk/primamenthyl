@@ -7,7 +7,8 @@ if [[ -z "${OUTPUT_DIR:-}" ]]; then
   exit 1
 fi
 
-merged_duckdb_path="${MERGED_DUCKDB_PATH:-$OUTPUT_DIR/all_samples.features.duckdb}"
+duckdb_output_dir="$OUTPUT_DIR/duckdb"
+merged_duckdb_path="${MERGED_DUCKDB_PATH:-$duckdb_output_dir/all_samples.features.duckdb}"
 
 if [[ ! -f "$merged_duckdb_path" ]]; then
   echo "Merged DuckDB file does not exist: $merged_duckdb_path" >&2

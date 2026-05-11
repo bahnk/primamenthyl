@@ -7,9 +7,11 @@ if [[ -z "${OUTPUT_DIR:-}" ]]; then
   exit 1
 fi
 
+duckdb_output_dir="$OUTPUT_DIR/duckdb"
+
 jq -c '.samples[]' config/sample_config.json | while read -r sample; do
   sample_name="$(echo "$sample" | jq -r '.sample_name')"
-  duckdb_path="$OUTPUT_DIR/$sample_name.features.duckdb"
+  duckdb_path="$duckdb_output_dir/$sample_name.features.duckdb"
 
   DBT_DUCKDB_PATH="$duckdb_path" \
   DBT_DUCKDB_DATABASE="$sample_name" \

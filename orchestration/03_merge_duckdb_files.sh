@@ -7,4 +7,6 @@ if [[ -z "${OUTPUT_DIR:-}" ]]; then
   exit 1
 fi
 
-uv run --project dbt_models python dbt_models/merge_duckdb_files.py
+duckdb_output_dir="$OUTPUT_DIR/duckdb"
+
+OUTPUT_DIR="$duckdb_output_dir" uv run --project dbt_models python dbt_models/merge_duckdb_files.py

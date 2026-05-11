@@ -23,8 +23,9 @@ if [[ ! -f "$FASTA_PATH" ]]; then
 fi
 
 chunk_size="${CHUNK_SIZE:-10000}"
+duckdb_output_dir="$OUTPUT_DIR/duckdb"
 
-mkdir -p "$OUTPUT_DIR"
+mkdir -p "$duckdb_output_dir"
 
 jq -c '.samples[]' config/sample_config.json | while read -r sample; do
   sample_name="$(echo "$sample" | jq -r '.sample_name')"
@@ -39,5 +40,5 @@ jq -c '.samples[]' config/sample_config.json | while read -r sample; do
     --age "$age" \
     --group "$group" \
     --chunk-size "$chunk_size" \
-    --output-path "$OUTPUT_DIR/$sample_name.features.duckdb"
+    --output-path "$duckdb_output_dir/$sample_name.features.duckdb"
 done
