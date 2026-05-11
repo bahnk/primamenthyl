@@ -208,6 +208,42 @@ models:
       - name: position
         tests:
           - not_null
+  - name: stg_methylation_edge_distances
+    description: Per-methylation-event signed distance to the nearest fragment edge, negative to the left edge and positive to the right edge.
+    columns:
+      - name: sample
+        tests:
+          - not_null
+      - name: query_id
+        tests:
+          - not_null
+      - name: align_id
+        tests:
+          - not_null
+      - name: reference
+        tests:
+          - not_null
+      - name: context
+        tests:
+          - not_null
+      - name: methylated
+        tests:
+          - not_null
+      - name: methylation_offset
+        tests:
+          - not_null
+      - name: position
+        tests:
+          - not_null
+      - name: start_position
+        tests:
+          - not_null
+      - name: end_position
+        tests:
+          - not_null
+      - name: edge_distance
+        tests:
+          - not_null
   - name: stg_record_methylation_counts
     description: Per-record methylation event counts derived from the raw quant tables.
     columns:

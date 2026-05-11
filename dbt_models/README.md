@@ -31,6 +31,8 @@ uv run dbt --profiles-dir . run
 
 - `stg_methylation_events`: unions the six raw methylation tables into a
   single event stream with context and methylation-state columns.
+- `stg_methylation_edge_distances`: one row per methylation event with
+  signed distance to the nearest fragment start or end position.
 - `stg_query_fragments`: one row per `query_id` with deduplicated
   `start_position` and `end_position`.
 - `global_cpg_methylation_rate`: per-sample global CpG methylation
