@@ -22,7 +22,7 @@ if [[ ! -f "$FASTA_PATH" ]]; then
   exit 1
 fi
 
-chunk_size="${CHUNK_SIZE:-10000}"
+chunk_size="${CHUNK_SIZE:-100000}"
 duckdb_output_dir="$OUTPUT_DIR/duckdb"
 
 mkdir -p "$duckdb_output_dir"

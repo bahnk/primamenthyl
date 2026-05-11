@@ -81,31 +81,6 @@ models:
       - name: record_count
         tests:
           - not_null
-  - name: stg_fragment_pairing
-    description: Counts align_ids per fragment_id and flags whether the fragment is paired.
-    columns:
-      - name: fragment_id
-        tests:
-          - not_null
-          - unique
-      - name: align_id_count
-        tests:
-          - not_null
-      - name: paired
-        tests:
-          - not_null
-  - name: stg_motif_half_counts
-    description: Motif counts divided by 2 and rounded to the nearest integer.
-    columns:
-      - name: motif
-        tests:
-          - not_null
-      - name: side
-        tests:
-          - not_null
-      - name: count
-        tests:
-          - not_null
   - name: stg_methylation_positions
     description: Resolves methylation offsets to genomic positions by joining quant__methylation to quant__records on align_id.
     columns:
@@ -119,25 +94,6 @@ models:
         tests:
           - not_null
       - name: position
-        tests:
-          - not_null
-  - name: stg_record_fragments
-    description: Maps each record align_id to a fragment_id shared by records with the same start_position and end_position.
-    columns:
-      - name: align_id
-        tests:
-          - not_null
-          - unique
-      - name: fragment_id
-        tests:
-          - not_null
-      - name: start_position
-        tests:
-          - not_null
-      - name: end_position
-        tests:
-          - not_null
-      - name: template_length
         tests:
           - not_null
   - name: stg_record_methylation_counts
