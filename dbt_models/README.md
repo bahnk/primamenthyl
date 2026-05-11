@@ -31,6 +31,8 @@ uv run dbt --profiles-dir . run
 
 - `stg_methylation_events`: unions the six raw methylation tables into a
   single event stream with context and methylation-state columns.
+- `stg_query_fragments`: one row per `query_id` with deduplicated
+  `start_position` and `end_position`.
 - `global_cpg_methylation_rate`: per-sample global CpG methylation
   fraction.
 - `global_chg_methylation_rate`: per-sample global CHG methylation
@@ -43,6 +45,10 @@ uv run dbt --profiles-dir . run
   chromosome 21 bins that have CHG observations.
 - `chh_methylation_rate_bins`: per-sample CHH methylation fraction for
   chromosome 21 bins that have CHH observations.
+- `fragment_count_bins`: per-sample fragment counts by fixed `100000`
+  bp chromosome 21 bins using fragment midpoints.
+- `fragment_fraction_bins`: per-sample fragment fractions by fixed
+  `100000` bp chromosome 21 bins using fragment midpoints.
 - `stg_record_methylation_counts`: number of methylation events per
   record, including records with zero methylation events.
 - `sample_mean_methylation`: mean number of methylation events per

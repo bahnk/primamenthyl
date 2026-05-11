@@ -130,6 +130,30 @@ models:
       - name: record_count
         tests:
           - not_null
+  - name: fragment_count_bins
+    description: Per-sample fragment counts by fixed 100000 bp chromosome 21 bins using fragment midpoints from stg_query_fragments.
+    columns:
+      - name: sample
+        tests:
+          - not_null
+      - name: bin
+        tests:
+          - not_null
+      - name: fragment_count
+        tests:
+          - not_null
+  - name: fragment_fraction_bins
+    description: Per-sample fragment fractions by fixed 100000 bp chromosome 21 bins using fragment midpoints from stg_query_fragments.
+    columns:
+      - name: sample
+        tests:
+          - not_null
+      - name: bin
+        tests:
+          - not_null
+      - name: fragment_fraction
+        tests:
+          - not_null
   - name: global_cpg_methylation_rate
     description: Per-sample global CpG methylation rate computed as methylated event count divided by total CpG event count.
     columns:
@@ -192,6 +216,19 @@ models:
           - not_null
           - unique
       - name: methylation_count
+        tests:
+          - not_null
+  - name: stg_query_fragments
+    description: One row per query_id fragment with deduplicated start and end positions from quant__records.
+    columns:
+      - name: query_id
+        tests:
+          - not_null
+          - unique
+      - name: start_position
+        tests:
+          - not_null
+      - name: end_position
         tests:
           - not_null
   - name: sample_mean_methylation
