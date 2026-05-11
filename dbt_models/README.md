@@ -29,6 +29,8 @@ uv run dbt --profiles-dir . run
 
 ## Models
 
+- `motif_frequency_4mers`: per-sample 4-mer motif frequencies for all
+  256 possible motifs across `five_prime` and `three_prime` ends.
 - `stg_methylation_events`: unions the six raw methylation tables into a
   single event stream with context and methylation-state columns.
 - `stg_methylation_edge_distances`: one row per methylation event with

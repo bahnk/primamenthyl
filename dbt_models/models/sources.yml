@@ -46,6 +46,21 @@ models:
       - name: methylation_count
         tests:
           - not_null
+  - name: motif_frequency_4mers
+    description: Per-sample 4-mer motif frequencies for all 256 possible DNA motifs across both fragment ends.
+    columns:
+      - name: sample
+        tests:
+          - not_null
+      - name: side
+        tests:
+          - not_null
+      - name: motif
+        tests:
+          - not_null
+      - name: motif_frequency
+        tests:
+          - not_null
   - name: stg_methylation_events
     description: Unified methylation event stream across CpG, CHG, and CHH contexts, with explicit methylation state.
     columns:
