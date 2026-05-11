@@ -15,6 +15,6 @@ models:
   primamenthyl:
     +database: "{{ env_var('DBT_DUCKDB_DATABASE') }}"
     staging:
-      +materialized: view
+      +materialized: table
     marts:
-      +materialized: view
+      +materialized: table
