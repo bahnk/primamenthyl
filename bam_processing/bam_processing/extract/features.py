@@ -57,6 +57,7 @@ class EncodedChunk:
 
     query_ids: jnp.ndarray
     is_read1: jnp.ndarray
+    full_match: jnp.ndarray
     align_ids: jnp.ndarray
     template_lengths: jnp.ndarray
     xm: jnp.ndarray
@@ -179,6 +180,7 @@ def encode_record_chunk(
 
     query_ids = []
     is_read1 = []
+    full_match = []
     align_ids: list[int] = []
     template_lengths: list[int] = []
     read_lengths: list[int] = []
@@ -201,6 +203,13 @@ def encode_record_chunk(
 
         query_ids.append(hash(record.query_name))
         is_read1.append(np.uint8(record.is_read1))
+        cigar_tuples = record.cigartuples or []
+        full_match.append(
+            np.uint8(
+                bool(cigar_tuples)
+                and all(operation == 0 for operation, _ in cigar_tuples)
+            )
+        )
         align_ids.append(align_id)
         template_lengths.append(template_length)
         read_lengths.append(query_length)
@@ -216,6 +225,7 @@ def encode_record_chunk(
         return EncodedChunk(
             query_ids=jnp.array([], dtype=jnp.int64),
             is_read1=jnp.array([], dtype=jnp.uint8),
+            full_match=jnp.array([], dtype=jnp.uint8),
             align_ids=jnp.array([], dtype=jnp.int64),
             template_lengths=empty_int,
             xm=jnp.empty((0, 0), dtype=jnp.int32),
@@ -229,6 +239,7 @@ def encode_record_chunk(
     return EncodedChunk(
         query_ids=jnp.array(query_ids, dtype=jnp.int64),
         is_read1=jnp.array(is_read1, dtype=jnp.uint8),
+        full_match=jnp.array(full_match, dtype=jnp.uint8),
         align_ids=jnp.array(align_ids, dtype=jnp.int64),
         template_lengths=jnp.array(template_lengths, dtype=jnp.int32),
         xm=jnp.array(padded_xm, dtype=jnp.int32),
@@ -248,6 +259,7 @@ def create_feature_tables(connection: duckdb.DuckDBPyConnection) -> None:
             align_id BIGINT,
             query_id BIGINT,
             is_read1 UTINYINT,
+            full_match UTINYINT,
             template_length INTEGER,
             reference VARCHAR,
             position INTEGER,
@@ -327,6 +339,7 @@ def build_records_rows(encoded_chunk: EncodedChunk) -> list[tuple]:
             encoded_chunk.align_ids.tolist(),
             encoded_chunk.query_ids.tolist(),
             encoded_chunk.is_read1.tolist(),
+            encoded_chunk.full_match.tolist(),
             np.asarray(encoded_chunk.template_lengths).tolist(),
             list(encoded_chunk.references),
             np.asarray(encoded_chunk.positions).tolist(),
@@ -624,17 +637,19 @@ def write_chunk_parquet_files(
             "align_id": [row[0] for row in record_rows],
             "query_id": [row[1] for row in record_rows],
             "is_read1": [row[2] for row in record_rows],
-            "template_length": [row[3] for row in record_rows],
-            "reference": [row[4] for row in record_rows],
-            "position": [row[5] for row in record_rows],
-            "start_position": [row[6] for row in record_rows],
-            "end_position": [row[7] for row in record_rows],
+            "full_match": [row[3] for row in record_rows],
+            "template_length": [row[4] for row in record_rows],
+            "reference": [row[5] for row in record_rows],
+            "position": [row[6] for row in record_rows],
+            "start_position": [row[7] for row in record_rows],
+            "end_position": [row[8] for row in record_rows],
         },
         schema=pa.schema(
             [
                 ("align_id", pa.int64()),
                 ("query_id", pa.int64()),
                 ("is_read1", pa.uint8()),
+                ("full_match", pa.uint8()),
                 ("template_length", pa.int32()),
                 ("reference", pa.string()),
                 ("position", pa.int32()),
