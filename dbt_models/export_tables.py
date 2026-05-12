@@ -12,6 +12,41 @@ TABLE_NAMES = (
     "chh_methylation_site_depth",
 )
 
+GENERIC_EXPORTS = (
+    (
+        "fragment_length_distribution",
+        """
+        select sample, fragment_length, record_count
+        from fragment_length_distribution
+        order by sample, fragment_length
+        """,
+    ),
+    (
+        "start_position_distribution",
+        """
+        select sample, start_position, record_count
+        from start_position_distribution
+        order by sample, start_position
+        """,
+    ),
+    (
+        "end_position_distribution",
+        """
+        select sample, end_position, record_count
+        from end_position_distribution
+        order by sample, end_position
+        """,
+    ),
+    (
+        "end_motif_distribution",
+        """
+        select sample, side, motif, motif_count
+        from end_motif_distribution
+        order by sample, side, motif
+        """,
+    ),
+)
+
 
 def quote_identifier(value: str) -> str:
     escaped = value.replace('"', '""')
@@ -193,6 +228,16 @@ def main() -> None:
                 samples=samples,
                 reference_columns=reference_columns,
             )
+            with output_path.open("w", newline="") as handle:
+                writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
+                writer.writerow(header)
+                writer.writerows(rows)
+
+        for table_name, query in GENERIC_EXPORTS:
+            output_path = export_dir / f"{table_name}.tsv"
+            rows = connection.execute(query).fetchall()
+            header = [column[0] for column in connection.description]
+
             with output_path.open("w", newline="") as handle:
                 writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
                 writer.writerow(header)

@@ -39,44 +39,110 @@ def load_feature_frame(connection: duckdb.DuckDBPyConnection) -> pd.DataFrame:
         """
     ).df()
 
-    methylation_bins = connection.execute(
+    fragment_lengths = connection.execute(
         """
-        SELECT sample, position_bin, methylation_count
-        FROM methylation_position_distribution
-        WHERE reference = 'chr21'
-        ORDER BY sample, position_bin
+        SELECT sample, median_fragment_length
+        FROM fragment_length_stats
+        ORDER BY sample
         """
     ).df()
 
-    if methylation_bins.empty:
-        return samples.rename(columns={"group_name": "group"})
+    motif_frequencies = connection.execute(
+        """
+        SELECT sample, side, motif, motif_frequency
+        FROM motif_frequency_4mers
+        ORDER BY sample, side, motif
+        """
+    ).df()
 
-    methylation_bins["position_bin"] = methylation_bins["position_bin"].astype(int)
-    methylation_bins["feature_name"] = methylation_bins["position_bin"].map(
-        lambda value: f"bin_{value}"
+    global_rates = connection.execute(
+        """
+        SELECT
+            cpg.sample,
+            cpg.global_cpg_methylation_rate,
+            chg.global_chg_methylation_rate,
+            chh.global_chh_methylation_rate
+        FROM global_cpg_methylation_rate AS cpg
+        INNER JOIN global_chg_methylation_rate AS chg
+            ON cpg.sample = chg.sample
+        INNER JOIN global_chh_methylation_rate AS chh
+            ON cpg.sample = chh.sample
+        ORDER BY cpg.sample
+        """
+    ).df()
+
+    fragment_fraction_bins = connection.execute(
+        """
+        SELECT sample, bin, fragment_fraction
+        FROM fragment_fraction_bins
+        ORDER BY sample, bin
+        """
+    ).df()
+
+    feature_frame = samples.rename(columns={"group_name": "group"}).merge(
+        fragment_lengths,
+        on="sample",
+        how="left",
     )
 
-    wide_bins = (
-        methylation_bins.pivot_table(
-            index="sample",
-            columns="feature_name",
-            values="methylation_count",
-            fill_value=0,
+    if not motif_frequencies.empty:
+        motif_frequencies = (
+            motif_frequencies.groupby(["sample", "motif"], as_index=False)["motif_frequency"]
+            .mean()
         )
-        .reset_index()
-        .rename_axis(columns=None)
-    )
+        motif_frequencies["feature_name"] = (
+            "motif_" + motif_frequencies["motif"].astype(str) + "_freq"
+        )
+        wide_motifs = (
+            motif_frequencies.pivot_table(
+                index="sample",
+                columns="feature_name",
+                values="motif_frequency",
+                fill_value=0,
+            )
+            .reset_index()
+            .rename_axis(columns=None)
+        )
+        feature_frame = feature_frame.merge(wide_motifs, on="sample", how="left")
 
-    return samples.merge(wide_bins, on="sample", how="left").fillna(0).rename(
-        columns={"group_name": "group"}
-    )
+    feature_frame = feature_frame.merge(global_rates, on="sample", how="left")
+
+    if not fragment_fraction_bins.empty:
+        fragment_fraction_bins["bin"] = fragment_fraction_bins["bin"].astype(int)
+        fragment_fraction_bins["feature_name"] = fragment_fraction_bins["bin"].map(
+            lambda value: f"fragment_fraction_bin_{value}"
+        )
+        wide_fragment_fraction_bins = (
+            fragment_fraction_bins.pivot_table(
+                index="sample",
+                columns="feature_name",
+                values="fragment_fraction",
+                fill_value=0,
+            )
+            .reset_index()
+            .rename_axis(columns=None)
+        )
+        feature_frame = feature_frame.merge(
+            wide_fragment_fraction_bins,
+            on="sample",
+            how="left",
+        )
+
+    return feature_frame.fillna(0)
 
 
 def build_model() -> Pipeline:
     return Pipeline(
         [
             ("scaler", StandardScaler()),
-            ("classifier", LogisticRegression(max_iter=1000)),
+            (
+                "classifier",
+                LogisticRegression(
+                    penalty="l1",
+                    solver="liblinear",
+                    max_iter=1000,
+                ),
+            ),
         ]
     )
 
@@ -202,10 +268,27 @@ def main() -> None:
         )
         return
 
-    feature_columns = ["age"] + sorted(
-        column
-        for column in feature_frame.columns
-        if column.startswith("bin_")
+    feature_columns = ["median_fragment_length"]
+    feature_columns.extend(
+        sorted(
+            column
+            for column in feature_frame.columns
+            if column.startswith("motif_")
+        )
+    )
+    feature_columns.extend(
+        [
+            "global_cpg_methylation_rate",
+            "global_chg_methylation_rate",
+            "global_chh_methylation_rate",
+        ]
+    )
+    feature_columns.extend(
+        sorted(
+            column
+            for column in feature_frame.columns
+            if column.startswith("fragment_fraction_bin_")
+        )
     )
     x = feature_frame[feature_columns]
     y = (feature_frame["group"] == _POSITIVE_LABEL).astype(int)

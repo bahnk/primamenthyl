@@ -9,6 +9,7 @@ These scripts run the sample pipeline in ordered steps:
 5. export selected merged tables to TSV files
 6. generate per-sample plots from the merged DuckDB file
 7. train the logistic regression model on the merged DuckDB file
+8. optionally benchmark `position_depth.py` across all BAM indexes on CPU and Metal
 
 ## Required Dependencies
 
@@ -69,6 +70,7 @@ bash orchestration/04_run_merged_dbt_models.sh
 bash orchestration/05_export_tables.sh
 bash orchestration/06_run_plotting.sh
 bash orchestration/07_run_model.sh
+bash orchestration/08_benchmark_position_depth.sh
 ```
 
 ## What Each Script Does
@@ -108,12 +110,17 @@ bash orchestration/07_run_model.sh
 - runs the merged-table export utility in `dbt_models/export_tables.py`
 - reads the merged file from `$MERGED_DUCKDB_PATH` or
   `$OUTPUT_DIR/duckdb/all_samples.features.duckdb`
-- writes TSV files for the `*_methylation_site_depth` tables into
-  `$OUTPUT_DIR/tables`
+- writes TSV files into `$OUTPUT_DIR/tables`
+- exports the `*_methylation_site_depth` tables in CelFiE-oriented format
 - formats them to match CelFiE input using `celfie/tim_matrix.txt`
 - writes `chrom`, `start`, `end`, per-sample `*_meth` / `*_depth`,
   then the TIM reference `chrom`, `start`, `end`, and reference columns
 - filters to TIM windows where depth is greater than `10` in at least one sample
+- also exports the merged distribution tables in their native tabular form:
+  `fragment_length_distribution.tsv`,
+  `start_position_distribution.tsv`,
+  `end_position_distribution.tsv`,
+  and `end_motif_distribution.tsv`
 
 `06_run_plotting.sh`
 
@@ -128,3 +135,16 @@ bash orchestration/07_run_model.sh
 - reads the merged file from `$MERGED_DUCKDB_PATH` or
   `$OUTPUT_DIR/duckdb/all_samples.features.duckdb`
 - writes model metrics and the ROC curve into `output/models`
+
+`08_benchmark_position_depth.sh`
+
+- reads `config/sample_config.json` with `jq`
+- runs `bam_processing/bam_processing/extract/position_depth.py` for each
+  `.bai` file twice:
+  `JAX_PLATFORMS=cpu` and `JAX_PLATFORMS=METAL`
+- uses `uv run --project bam_processing` for CPU
+- uses `uv run --project bam_processing --extra macos` for Metal
+- writes per-run stdout/stderr logs under
+  `$OUTPUT_DIR/benchmarks/position_depth/{cpu,metal}`
+- writes timing results to
+  `$OUTPUT_DIR/benchmarks/position_depth/timings.tsv`

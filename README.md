@@ -129,12 +129,18 @@ without `plt`.
 ### 6. `models/`: merged DuckDB -> classifier outputs
 
 The `models` directory contains the logistic regression training script.
+It uses L1-regularized logistic regression with standardized features.
 
 Feature set:
 
-- `age`
-- all methylation-position bins across chromosome 21 from
-  `methylation_position_distribution`
+- `median_fragment_length`
+- all 256 4-mer motif frequencies from `motif_frequency_4mers`, averaged
+  across `five_prime` and `three_prime` into `motif_<4mer>_freq`
+- `global_cpg_methylation_rate`
+- `global_chg_methylation_rate`
+- `global_chh_methylation_rate`
+- all chromosome 21 `fragment_fraction_bins` as
+  `fragment_fraction_bin_<bin>`
 
 Target:
 
@@ -201,6 +207,11 @@ bash orchestration/07_run_model.sh
   `chrom`, `start`, `end`, one `sample_meth` / `sample_depth` pair per
   sample, then the TIM reference block, filtered to windows with depth
   greater than `10` in at least one sample.
+- The export step also writes plain TSVs for
+  `fragment_length_distribution`,
+  `start_position_distribution`,
+  `end_position_distribution`, and
+  `end_motif_distribution`.
 - `JAX_PLATFORMS` controls the JAX backend used by `bam_processing`.
   In practice this should usually be `cpu`, or `METAL` on Apple Silicon
   when `jax-metal` is installed in the `bam_processing` environment.
