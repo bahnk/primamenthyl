@@ -19,7 +19,7 @@ def resolve_paths() -> tuple[Path, Path]:
             output_dir / "all_samples.features.duckdb",
         )
     )
-    plots_dir = repo_root / "output" / "plots"
+    plots_dir = repo_root / "output" / "plots" / "end_position_distribution"
     plots_dir.mkdir(parents=True, exist_ok=True)
     return merged_path, plots_dir
 
