@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import os
 from pathlib import Path
+import sys
 
 import duckdb
 
@@ -46,6 +47,22 @@ GENERIC_EXPORTS = (
         """,
     ),
 )
+
+
+def resolve_tim_matrix_path(repo_root: Path) -> Path:
+    env_value = os.environ.get("TIM_MATRIX_PATH")
+    if env_value:
+        return Path(env_value)
+
+    candidate_paths = (
+        repo_root / "data" / "celfie" / "tim_matrix.txt",
+        repo_root / "celfie" / "tim_matrix.txt",
+    )
+    for candidate in candidate_paths:
+        if candidate.exists():
+            return candidate
+
+    return candidate_paths[0]
 
 
 def quote_identifier(value: str) -> str:
@@ -177,12 +194,7 @@ def main() -> None:
     export_dir.mkdir(parents=True, exist_ok=True)
 
     repo_root = Path(__file__).resolve().parents[1]
-    tim_matrix_path = Path(
-        os.environ.get(
-            "TIM_MATRIX_PATH",
-            repo_root / "celfie" / "tim_matrix.txt",
-        )
-    )
+    tim_matrix_path = resolve_tim_matrix_path(repo_root)
     if not tim_matrix_path.exists():
         raise SystemExit(f"TIM_MATRIX_PATH does not exist: {tim_matrix_path}")
 
@@ -217,13 +229,6 @@ def main() -> None:
                 )
             ).fetchall()
 
-            if not rows:
-                raise SystemExit(
-                    f"No rows produced for {table_name}. "
-                    "This usually means the methylation-site coordinates do not overlap "
-                    "the TIM/reference coordinates in TIM_MATRIX_PATH."
-                )
-
             header = build_export_header(
                 samples=samples,
                 reference_columns=reference_columns,
@@ -232,6 +237,15 @@ def main() -> None:
                 writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
                 writer.writerow(header)
                 writer.writerows(rows)
+            if not rows:
+                print(
+                    f"Warning: no rows produced for {table_name}. "
+                    "Wrote a header-only TSV. "
+                    "This usually means the methylation-site coordinates do not overlap "
+                    "the TIM/reference coordinates in TIM_MATRIX_PATH, "
+                    "or that no rows passed the export depth filter.",
+                    file=sys.stderr,
+                )
 
         for table_name, query in GENERIC_EXPORTS:
             output_path = export_dir / f"{table_name}.tsv"

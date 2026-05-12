@@ -434,6 +434,7 @@ def build_motif_indices(
     read1_chunk = EncodedChunk(
         query_ids=encoded_chunk.query_ids[read1_mask],
         is_read1=encoded_chunk.is_read1[read1_mask],
+        full_match=encoded_chunk.full_match[read1_mask],
         align_ids=encoded_chunk.align_ids[read1_mask],
         template_lengths=encoded_chunk.template_lengths[read1_mask],
         xm=encoded_chunk.xm[read1_mask],
