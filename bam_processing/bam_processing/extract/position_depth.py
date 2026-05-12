@@ -33,28 +33,6 @@ def count_records_in_bai(bai_path: str | Path) -> int:
         )
         return total_records + bam_file.nocoordinate
 
-def count_motifs(motifs: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
-    # jnp.sort (required for jnp.unique) is not supported on Metal for 2D
-    # arrays
-    if jax.default_backend() == "METAL":
-        # We need to hash the motifs here
-        powers = jnp.array([5**3, 5**2, 5, 1], dtype=jnp.int32)
-        encoded = (motifs * powers).sum(axis=1)
-        unique_vals, counts = jnp.unique(encoded, return_counts=True)
-        # Decode the unique motifs back to their original form
-        unique_motifs = jnp.stack([
-            (unique_vals // 5**3) % 5,
-            (unique_vals // 5**2) % 5,
-            (unique_vals // 5) % 5,
-            unique_vals % 5
-        ], axis=1)
-    else:
-        unique_motifs, counts = jnp.unique(left_motifs, axis=0, return_counts=True)
-
-    return unique_motifs, counts
-
-
-
 def iter_bam_records_from_bai(
     bai_path: str | Path,
 ) -> tuple[int, Iterator[pysam.AlignedSegment]]:
@@ -88,9 +66,9 @@ if __name__ == "__main__":
 
     total, iterator = iter_bam_records_from_bai(args.bai_path)
 
-    positions = np.empty(total, dtype=jnp.int32)
-    read_lengths = np.empty(total, dtype=jnp.int32)
-    xms = np.empty((total, 100), dtype=jnp.int32)
+    pos_array = np.zeros(total, dtype=jnp.int32)
+    rlen_array = np.zeros(total, dtype=jnp.int32)
+    xm_array = np.zeros((total, 100), dtype=jnp.int32)
 
     for i, record in enumerate(iterator):
 
@@ -100,35 +78,42 @@ if __name__ == "__main__":
         if not record.is_proper_pair:
             continue
 
-
         # only full matches
         cigar_tuples = record.cigartuples
         if not all(operation == 0 for operation, _ in cigar_tuples):
             continue
 
-        positions[i] = record.reference_start
-        read_lengths[i] = record.query_length
+        pos_array[i] = record.reference_start
+        rlen_array[i] = record.query_length
 
         xm = [ord(c) for c in record.get_tag("XM")]
         padding = [0] * (100 - len(xm))
-        xms[i] = xm + padding
+        xm_array[i] = xm + padding
 
-
-    pos_array = jnp.array(positions, dtype=jnp.int32)
-    rlen_array = jnp.array(read_lengths, dtype=jnp.int32)
-    xm_array = jnp.array(xms, dtype=jnp.int32)
 
     end_array = pos_array + rlen_array
-    intervals = jnp.stack([pos_array, end_array], axis=1)
+    intervals = np.stack([pos_array, end_array], axis=1)
 
-    is_methylated = (xm_array == ord("Z")).astype(jnp.int32)
-    rows, cols = jnp.nonzero(is_methylated)
+    is_methylated = (xm_array == ord("Z")).astype(np.int32)
+    rows, cols = np.nonzero(is_methylated)
     methyl = pos_array[rows] + cols
-
 
     starts = intervals[:, 0][:, None]
     ends = intervals[:, 1][:, None]
-    methyl_pos = methyl[None, :]
 
-    inside = ( (methyl_pos >= starts) & (methyl_pos < ends) )
-    counts = inside.sum(axis=1)
+    starts = jnp.asarray(intervals[:, 0], dtype=jnp.int32)
+    ends = jnp.asarray(intervals[:, 1], dtype=jnp.int32)
+    methyl = jnp.asarray(methyl, dtype=jnp.int32)
+
+    left = jnp.greater_equal(methyl[:, None], starts[None, :])
+    right = jnp.less_equal(methyl[:, None], ends[None, :])
+    print(left.sum(), right.sum())
+
+    # Getting the arrays back to CPU otherwise it's not fair to compare the
+    # performance
+    left_arr = jax.device_get(left).astype(np.int32)
+    right_arr = jax.device_get(right).astype(np.int32)
+
+    # This part fails with METAL so it would have to be tested on an
+    # CUDA device.
+    # inside = jnp.logical_and(left, right)
