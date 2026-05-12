@@ -113,6 +113,21 @@ models:
         tests:
           - not_null
       - name: cpg_methylation_rate
+  - name: cpg_fragment_overlap_counts
+    description: Per-sample fragment overlap counts at each distinct CpG methylation position.
+    columns:
+      - name: sample
+        tests:
+          - not_null
+      - name: reference
+        tests:
+          - not_null
+      - name: position
+        tests:
+          - not_null
+      - name: fragment_overlap_count
+        tests:
+          - not_null
   - name: chg_methylation_rate_bins
     description: Per-sample CHG methylation rate for chromosome 21 bins that contain CHG observations.
     columns:
@@ -123,6 +138,21 @@ models:
         tests:
           - not_null
       - name: chg_methylation_rate
+  - name: chg_fragment_overlap_counts
+    description: Per-sample fragment overlap counts at each distinct CHG methylation position.
+    columns:
+      - name: sample
+        tests:
+          - not_null
+      - name: reference
+        tests:
+          - not_null
+      - name: position
+        tests:
+          - not_null
+      - name: fragment_overlap_count
+        tests:
+          - not_null
   - name: chh_methylation_rate_bins
     description: Per-sample CHH methylation rate for chromosome 21 bins that contain CHH observations.
     columns:
@@ -133,6 +163,21 @@ models:
         tests:
           - not_null
       - name: chh_methylation_rate
+  - name: chh_fragment_overlap_counts
+    description: Per-sample fragment overlap counts at each distinct CHH methylation position.
+    columns:
+      - name: sample
+        tests:
+          - not_null
+      - name: reference
+        tests:
+          - not_null
+      - name: position
+        tests:
+          - not_null
+      - name: fragment_overlap_count
+        tests:
+          - not_null
   - name: fragment_length_distribution
     description: Distribution of absolute fragment lengths by sample from the merged quant__records source.
     columns:

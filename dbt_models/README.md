@@ -45,10 +45,16 @@ uv run dbt --profiles-dir . run
   fraction.
 - `cpg_methylation_rate_bins`: per-sample CpG methylation fraction for
   chromosome 21 bins that have CpG observations.
+- `cpg_fragment_overlap_counts`: per-sample fragment overlap counts at
+  each distinct CpG methylation position.
 - `chg_methylation_rate_bins`: per-sample CHG methylation fraction for
   chromosome 21 bins that have CHG observations.
+- `chg_fragment_overlap_counts`: per-sample fragment overlap counts at
+  each distinct CHG methylation position.
 - `chh_methylation_rate_bins`: per-sample CHH methylation fraction for
   chromosome 21 bins that have CHH observations.
+- `chh_fragment_overlap_counts`: per-sample fragment overlap counts at
+  each distinct CHH methylation position.
 - `fragment_count_bins`: per-sample fragment counts by fixed `100000`
   bp chromosome 21 bins using fragment midpoints.
 - `fragment_fraction_bins`: per-sample fragment fractions by fixed
