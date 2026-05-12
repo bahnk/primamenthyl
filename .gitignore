@@ -47,3 +47,6 @@ data/
 
 # Output files
 output/
+
+# Celfie
+celfie/*

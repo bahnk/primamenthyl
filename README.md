@@ -182,8 +182,9 @@ bash orchestration/01_run_bam_processing.sh
 bash orchestration/02_run_dbt_models.sh
 bash orchestration/03_merge_duckdb_files.sh
 bash orchestration/04_run_merged_dbt_models.sh
-bash orchestration/05_run_plotting.sh
-bash orchestration/06_run_model.sh
+bash orchestration/05_export_tables.sh
+bash orchestration/06_run_plotting.sh
+bash orchestration/07_run_model.sh
 ```
 
 ## Notes
@@ -192,8 +193,14 @@ bash orchestration/06_run_model.sh
   because `bam_processing` needs the reference FASTA to derive motif and
   methylation-position context.
 - `OUTPUT_DIR` is the base output directory. The orchestration layer writes
-  DuckDB files under `"$OUTPUT_DIR/duckdb"`, plots under `output/plots`,
-  and model outputs under `output/models`.
+  DuckDB files under `"$OUTPUT_DIR/duckdb"`, exported TSVs under
+  `"$OUTPUT_DIR/tables"`, plots under `output/plots`, and model outputs
+  under `output/models`.
+- The exported `*_methylation_site_depth.tsv` files are written in a
+  CelFiE-compatible wide format using `celfie/tim_matrix.txt`, with
+  `chrom`, `start`, `end`, one `sample_meth` / `sample_depth` pair per
+  sample, then the TIM reference block, filtered to windows with depth
+  greater than `10` in at least one sample.
 - `JAX_PLATFORMS` controls the JAX backend used by `bam_processing`.
   In practice this should usually be `cpu`, or `METAL` on Apple Silicon
   when `jax-metal` is installed in the `bam_processing` environment.

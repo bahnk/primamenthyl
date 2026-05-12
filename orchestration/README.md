@@ -6,8 +6,9 @@ These scripts run the sample pipeline in ordered steps:
 2. apply the dbt models to each per-sample DuckDB file
 3. merge all per-sample DuckDB files into one combined DuckDB file
 4. run merged-file dbt models on the combined DuckDB file
-5. generate per-sample plots from the merged DuckDB file
-6. train the logistic regression model on the merged DuckDB file
+5. export selected merged tables to TSV files
+6. generate per-sample plots from the merged DuckDB file
+7. train the logistic regression model on the merged DuckDB file
 
 ## Required Dependencies
 
@@ -65,15 +66,16 @@ bash orchestration/01_run_bam_processing.sh
 bash orchestration/02_run_dbt_models.sh
 bash orchestration/03_merge_duckdb_files.sh
 bash orchestration/04_run_merged_dbt_models.sh
-bash orchestration/05_run_plotting.sh
-bash orchestration/06_run_model.sh
+bash orchestration/05_export_tables.sh
+bash orchestration/06_run_plotting.sh
+bash orchestration/07_run_model.sh
 ```
 
 ## What Each Script Does
 
 `00_run_all.sh`
 
-- runs the full pipeline in sequence from `01` through `06`
+- runs the full pipeline in sequence from `01` through `07`
 
 `01_run_bam_processing.sh`
 
@@ -101,14 +103,26 @@ bash orchestration/06_run_model.sh
 - reads the merged file from `$MERGED_DUCKDB_PATH` or
   `$OUTPUT_DIR/duckdb/all_samples.features.duckdb`
 
-`05_run_plotting.sh`
+`05_export_tables.sh`
+
+- runs the merged-table export utility in `dbt_models/export_tables.py`
+- reads the merged file from `$MERGED_DUCKDB_PATH` or
+  `$OUTPUT_DIR/duckdb/all_samples.features.duckdb`
+- writes TSV files for the `*_methylation_site_depth` tables into
+  `$OUTPUT_DIR/tables`
+- formats them to match CelFiE input using `celfie/tim_matrix.txt`
+- writes `chrom`, `start`, `end`, per-sample `*_meth` / `*_depth`,
+  then the TIM reference `chrom`, `start`, `end`, and reference columns
+- filters to TIM windows where depth is greater than `10` in at least one sample
+
+`06_run_plotting.sh`
 
 - runs the standalone plotting scripts in `plotting/`
 - reads the merged file from `$MERGED_DUCKDB_PATH` or
   `$OUTPUT_DIR/duckdb/all_samples.features.duckdb`
 - writes one PDF per sample per plot type into `output/plots`
 
-`06_run_model.sh`
+`07_run_model.sh`
 
 - runs the logistic regression training script in `models/`
 - reads the merged file from `$MERGED_DUCKDB_PATH` or
