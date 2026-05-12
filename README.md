@@ -1,94 +1,99 @@
 # `primamenthyl`
 
-This repository is organized as a staged pipeline:
+`primamenthyl` is a DuckDB-centered methylation analysis pipeline for
+indexed BAM files. The repo is split into four main stages:
 
-1. extract per-sample features from indexed BAM files into DuckDB
-2. run per-sample dbt models on each DuckDB file
-3. merge all per-sample DuckDB files into one combined DuckDB file
-4. run merged-file dbt models for cross-sample summaries
-5. generate per-sample plots from the merged DuckDB file
-6. train a logistic regression model on merged sample-level features
+1. `bam_processing/` extracts one DuckDB database per sample from a
+   `.bam.bai` plus reference FASTA.
+2. `dbt_models/` adds per-sample derived tables, merges all sample
+   DuckDB files, and builds cohort-level summary tables.
+3. `plotting/` renders per-sample PDFs from the merged DuckDB file.
+4. `models/` trains and evaluates a logistic regression classifier on
+   merged sample-level features.
 
-## Pipeline Logic
+## Repository Layout
 
-### 1. `bam_processing/`: BAM/BAI -> per-sample DuckDB
+- [bam_processing](./bam_processing/README.md): single-sample BAM/BAI
+  feature extraction.
+- [dbt_models](./dbt_models/README.md): dbt transformations plus DuckDB
+  merge and table export utilities.
+- [orchestration](./orchestration/README.md): shell entrypoints for the
+  staged pipeline.
+- `plotting/`: standalone plotting scripts for merged distributions.
+- `models/`: logistic regression training and evaluation.
+- `config/sample_config.json`: sample metadata used by the orchestration
+  scripts.
 
-`bam_processing` is the raw feature extraction layer.
+## Pipeline Outputs
 
-Input:
-- one `.bai` file per sample
-- the matching BAM file
-- a reference FASTA
+### Per-sample extraction
 
-Output:
-- one DuckDB file per sample in `$OUTPUT_DIR/duckdb/<sample>.features.duckdb`
+`bam_processing` writes one DuckDB file per sample to:
 
-The extractor writes base tables including:
+```text
+$OUTPUT_DIR/duckdb/<sample>.features.duckdb
+```
+
+Raw tables created by the extractor include:
 
 - `quant__records`
-  One row per retained alignment record. Includes:
-  `align_id`, `query_id`, `is_read1`, `template_length`, `reference`, `position`,
-  `start_position`, `end_position`.
-- `quant__cpg_methylated`, `quant__cpg_unmethylated`,
-  `quant__chg_methylated`, `quant__chg_unmethylated`,
-  `quant__chh_methylated`, `quant__chh_unmethylated`
-  One row per methylation event, keyed by `align_id`, with a read-local
-  `position`, split by sequence context and methylation state.
+- `quant__motifs`
 - `quant__motif_counts`
-  Aggregated end-motif counts.
+- `quant__cpg_methylated`
+- `quant__cpg_unmethylated`
+- `quant__chg_methylated`
+- `quant__chg_unmethylated`
+- `quant__chh_methylated`
+- `quant__chh_unmethylated`
 - `quant__samples`
-  Sample metadata such as `sample`, `total_records`, `total_fragments`,
-  `age`, and `group_name`.
 
-This layer is the only part that reads BAM data directly. Everything
-downstream works from DuckDB.
+The extractor keeps only mapped, proper-pair records that meet the
+minimum read length threshold.
 
-### 2. `dbt_models/`: per-sample transformations
+### Per-sample dbt models
 
-The dbt project has two logical groups of models:
+`dbt run --select tag:individual` builds per-sample staging and mart
+tables inside each sample DuckDB file. Current individual models include:
 
-- `tag:individual`
-  Models that run on each per-sample DuckDB file during
-  `orchestration/02_run_dbt_models.sh`.
-- `tag:merged`
-  Models that run on the merged DuckDB file during
-  `orchestration/04_run_merged_dbt_models.sh`.
-
-Per-sample models add derived structure on top of the raw `quant__*`
-tables. Examples:
-
-- `stg_record_methylation_counts`
-  Counts methylation events per `align_id`.
-- `stg_record_fragments`
-  Assigns a `fragment_id` to records sharing the same
-  `start_position` and `end_position`.
-- `stg_fragment_pairing`
-  Counts records per fragment and marks whether a fragment is paired.
+- `stg_methylation_events`
 - `stg_methylation_positions`
-  Converts unified methylation-event offsets into genomic positions by
-  joining them with `quant__records`.
+- `stg_methylation_edge_distances`
+- `stg_query_fragments`
+- `stg_record_methylation_counts`
+- `fragment_length_stats`
+- `fragment_count_bins`
+- `fragment_fraction_bins`
+- `motif_frequency_4mers`
+- `global_cpg_methylation_rate`
+- `global_chg_methylation_rate`
+- `global_chh_methylation_rate`
+- `cpg_methylation_site_depth`
+- `chg_methylation_site_depth`
+- `chh_methylation_site_depth`
+- `cpg_methylation_rate_bins`
+- `chg_methylation_rate_bins`
+- `chh_methylation_rate_bins`
+- `cpg_fragment_overlap_counts`
+- `chg_fragment_overlap_counts`
+- `chh_fragment_overlap_counts`
+- `sample_mean_methylation`
 
-These models stay inside each sample’s DuckDB file.
+### Merged DuckDB
 
-### 3. `dbt_models/merge_duckdb_files.py`: per-sample DuckDB -> merged DuckDB
+`dbt_models/merge_duckdb_files.py` unions all per-sample
+`*.features.duckdb` files into:
 
-After per-sample extraction and modeling, all sample DuckDB files are
-merged into:
+```text
+$OUTPUT_DIR/duckdb/all_samples.features.duckdb
+```
 
-- `output/duckdb/all_samples.features.duckdb`
-- by default this resolves to `$OUTPUT_DIR/duckdb/all_samples.features.duckdb`
+If a source relation does not already contain a `sample` column, the
+merge step prepends one.
 
-The merge script unions tables and views across samples. For relations
-that do not already have a `sample` column, it prepends one so the merged
-file keeps sample identity.
+### Merged dbt models
 
-This merged database is the handoff point for cohort-level summaries,
-plotting, and modeling.
-
-### 4. `dbt_models/`: merged-file distributions and summaries
-
-Merged dbt models build cross-sample summary tables directly in the
-merged DuckDB file. Current examples include:
+`dbt run --select tag:merged` builds cohort-level summary tables in the
+merged DuckDB file:
 
 - `fragment_length_distribution`
 - `start_position_distribution`
@@ -96,96 +101,88 @@ merged DuckDB file. Current examples include:
 - `end_motif_distribution`
 - `methylation_position_distribution`
 
-These tables are designed for downstream plotting and modeling.
+### Exported tables
 
-Example:
+`dbt_models/export_tables.py` writes TSVs to:
 
-- `methylation_position_distribution`
-  joins merged `quant__records` and the unified methylation-event stream,
-  resolves genomic methylation positions,
-  bins them into 100000 bp windows,
-  and groups by `sample`, `reference`, context, and methylation state.
+```text
+$OUTPUT_DIR/tables
+```
 
-### 5. `plotting/`: merged DuckDB -> PDFs
+Exports include:
 
-The plotting scripts are standalone Python programs that:
+- `cpg_methylation_site_depth.tsv`
+- `chg_methylation_site_depth.tsv`
+- `chh_methylation_site_depth.tsv`
+- `fragment_length_distribution.tsv`
+- `start_position_distribution.tsv`
+- `end_position_distribution.tsv`
+- `end_motif_distribution.tsv`
 
-- read the merged DuckDB file
-- query precomputed distribution tables
-- write one PDF per sample into `output/plots`
+The methylation site-depth exports are written in a CelFiE-oriented wide
+format using `data/celfie/tim_matrix.txt` by default, or
+`$TIM_MATRIX_PATH` when set.
 
-Current plot families:
+### Plots
 
-- fragment length distribution
-- start position distribution
-- end position distribution
-- methylation position distribution
-- 5' end motif distribution
-- 3' end motif distribution
+The plotting scripts read the merged DuckDB file and write PDFs under
+the repository-local `output/plots/` tree:
 
-These scripts use `matplotlib.figure.Figure` and `seaborn` directly,
-without `plt`.
+- `fragment_length_distribution/`
+- `start_position_distribution/`
+- `end_position_distribution/`
+- `methylation_position_distribution/`
+- `methylation_rate_distribution/`
+- `methylation_edge_distance_distribution/`
+- `five_prime_end_motif_distribution/`
+- `three_prime_end_motif_distribution/`
 
-### 6. `models/`: merged DuckDB -> classifier outputs
+Note: plotting output is currently rooted at `./output/plots`, not
+`$OUTPUT_DIR/plots`.
 
-The `models` directory contains the logistic regression training script.
-It uses L1-regularized logistic regression with standardized features.
+### Model outputs
 
-Feature set:
+`models/train_group_logistic_regression.py` writes:
+
+- `output/models/logistic_regression_metrics.csv`
+- `output/models/logistic_regression_roc_curve.pdf`
+
+The classifier uses:
 
 - `median_fragment_length`
-- all 256 4-mer motif frequencies from `motif_frequency_4mers`, averaged
-  across `five_prime` and `three_prime` into `motif_<4mer>_freq`
+- mean motif frequencies across both fragment ends from
+  `motif_frequency_4mers`
 - `global_cpg_methylation_rate`
 - `global_chg_methylation_rate`
 - `global_chh_methylation_rate`
-- all chromosome 21 `fragment_fraction_bins` as
-  `fragment_fraction_bin_<bin>`
+- all `fragment_fraction_bin_*` features
 
-Target:
+The target is `group_name` reduced to `ctrl` vs `als`. Evaluation uses
+stratified cross-validated predictions when both classes have at least
+two samples; otherwise the script writes a skipped status and an
+explanatory ROC PDF.
 
-- `group_name` reduced to `ctrl` vs `als`
+## Running The Pipeline
 
-Outputs in `output/models`:
-
-- `logistic_regression_metrics.csv`
-  with precision, sensitivity, and F1 score
-- `logistic_regression_roc_curve.pdf`
-
-If the merged data does not contain both classes, the script does not
-crash. It writes a skipped status and an explanatory ROC PDF instead.
-
-## Directory Roles
-
-- [bam_processing](/Users/nourdinebah/primamente/take_home/nourdinebah/primamenthyl/bam_processing)
-  Raw BAM feature extraction.
-- [dbt_models](/Users/nourdinebah/primamente/take_home/nourdinebah/primamenthyl/dbt_models)
-  Per-sample and merged DuckDB transformations.
-- [plotting](/Users/nourdinebah/primamente/take_home/nourdinebah/primamenthyl/plotting)
-  Standalone plotting scripts using the merged DuckDB file.
-- [models](/Users/nourdinebah/primamente/take_home/nourdinebah/primamenthyl/models)
-  Standalone ML training script using merged derived features.
-- [orchestration](/Users/nourdinebah/primamente/take_home/nourdinebah/primamenthyl/orchestration)
-  Shell scripts that run the pipeline in order.
-
-## End-to-End Run
-
-From the repo root:
+Set the required environment variables from the repo root:
 
 ```bash
 export BAM_DIR=/path/to/bam_indexes
 export FASTA_PATH=/path/to/reference.fa
+export OUTPUT_DIR=/path/to/output
 export JAX_PLATFORMS=cpu
-export OUTPUT_DIR=output
-
-bash orchestration/00_run_all.sh
 ```
 
-Or step by step:
+Run the extraction and per-sample modeling steps:
 
 ```bash
 bash orchestration/01_run_bam_processing.sh
 bash orchestration/02_run_dbt_models.sh
+```
+
+Then run the merge, merged dbt, export, plotting, and model steps:
+
+```bash
 bash orchestration/03_merge_duckdb_files.sh
 bash orchestration/04_run_merged_dbt_models.sh
 bash orchestration/05_export_tables.sh
@@ -193,31 +190,19 @@ bash orchestration/06_run_plotting.sh
 bash orchestration/07_run_model.sh
 ```
 
+`orchestration/00_run_all.sh` currently runs only steps `03` through
+`07`, so it assumes the per-sample DuckDB files and individual dbt
+models already exist.
+
 ## Notes
 
-- `FASTA_PATH` is required for `orchestration/01_run_bam_processing.sh`
-  because `bam_processing` needs the reference FASTA to derive motif and
-  methylation-position context.
-- `OUTPUT_DIR` is the base output directory. The orchestration layer writes
-  DuckDB files under `"$OUTPUT_DIR/duckdb"`, exported TSVs under
-  `"$OUTPUT_DIR/tables"`, plots under `output/plots`, and model outputs
-  under `output/models`.
-- The exported `*_methylation_site_depth.tsv` files are written in a
-  CelFiE-compatible wide format using `celfie/tim_matrix.txt`, with
-  `chrom`, `start`, `end`, one `sample_meth` / `sample_depth` pair per
-  sample, then the TIM reference block, filtered to windows with depth
-  greater than `10` in at least one sample.
-- The export step also writes plain TSVs for
-  `fragment_length_distribution`,
-  `start_position_distribution`,
-  `end_position_distribution`, and
-  `end_motif_distribution`.
-- `JAX_PLATFORMS` controls the JAX backend used by `bam_processing`.
-  In practice this should usually be `cpu`, or `METAL` on Apple Silicon
-  when `jax-metal` is installed in the `bam_processing` environment.
-- Per-sample dbt models run before merging.
-- Merged dbt models run after merging.
-- Plotting and modeling both depend on the merged DuckDB file and the
-  merged dbt summary tables.
-- The root pipeline is DuckDB-centered: BAM is only touched once, at the
-  extraction step.
+- `config/sample_config.json` currently defines 22 samples and expects
+  `BAM_DIR` and `OUTPUT_DIR` to be expanded before use by the shell.
+- `CHUNK_SIZE` can override the extractor chunk size. The orchestration
+  default is `100000`; the CLI default is `1000000`.
+- `MERGED_DUCKDB_PATH` can override the merged database path for steps
+  `04` through `07`.
+- `POSITION_BIN_SIZE` controls the binning used by the start and end
+  position plotting scripts.
+- `make readme-pdf` regenerates the checked-in `README.pdf` files from
+  all Markdown READMEs.
