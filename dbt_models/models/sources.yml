@@ -46,6 +46,60 @@ models:
       - name: methylation_count
         tests:
           - not_null
+  - name: cpg_methylation_site_depth
+    description: CpG site-level methylation counts and fragment depth at each genomic methylation position.
+    columns:
+      - name: CHR
+        tests:
+          - not_null
+      - name: START
+        tests:
+          - not_null
+      - name: END
+        tests:
+          - not_null
+      - name: METH
+        tests:
+          - not_null
+      - name: DEPTH
+        tests:
+          - not_null
+  - name: chg_methylation_site_depth
+    description: CHG site-level methylation counts and fragment depth at each genomic methylation position.
+    columns:
+      - name: CHR
+        tests:
+          - not_null
+      - name: START
+        tests:
+          - not_null
+      - name: END
+        tests:
+          - not_null
+      - name: METH
+        tests:
+          - not_null
+      - name: DEPTH
+        tests:
+          - not_null
+  - name: chh_methylation_site_depth
+    description: CHH site-level methylation counts and fragment depth at each genomic methylation position.
+    columns:
+      - name: CHR
+        tests:
+          - not_null
+      - name: START
+        tests:
+          - not_null
+      - name: END
+        tests:
+          - not_null
+      - name: METH
+        tests:
+          - not_null
+      - name: DEPTH
+        tests:
+          - not_null
   - name: motif_frequency_4mers
     description: Per-sample 4-mer motif frequencies for all 256 possible DNA motifs across both fragment ends.
     columns:

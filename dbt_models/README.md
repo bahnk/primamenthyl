@@ -29,6 +29,12 @@ uv run dbt --profiles-dir . run
 
 ## Models
 
+- `cpg_methylation_site_depth`: CpG site-level table with `CHR`,
+  `START`, `END`, `METH`, and `DEPTH`.
+- `chg_methylation_site_depth`: CHG site-level table with `CHR`,
+  `START`, `END`, `METH`, and `DEPTH`.
+- `chh_methylation_site_depth`: CHH site-level table with `CHR`,
+  `START`, `END`, `METH`, and `DEPTH`.
 - `motif_frequency_4mers`: per-sample 4-mer motif frequencies for all
   256 possible motifs across `five_prime` and `three_prime` ends.
 - `stg_methylation_events`: unions the six raw methylation tables into a
